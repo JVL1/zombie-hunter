@@ -50,6 +50,14 @@ export class Level1Scene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, 3200, 600);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
+    // Debug toggle (press D)
+    this.input.keyboard!.addKey('D').on('down', () => {
+      this.physics.world.drawDebug = !this.physics.world.drawDebug;
+      if (!this.physics.world.drawDebug) {
+        this.physics.world.debugGraphic.clear();
+      }
+    });
+
     // Launch HUD overlay
     this.scene.launch('HUD');
 
