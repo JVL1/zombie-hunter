@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Player } from '../entities/Player';
 import { Zombie } from '../entities/Zombie';
+import { createSplatter } from '../systems/Splatter';
 
 export class Level1Scene extends Phaser.Scene {
   private player!: Player;
@@ -69,6 +70,8 @@ export class Level1Scene extends Phaser.Scene {
           z.takeDamage(10); // Base sword damage
           if (z.isDead()) {
             this.onZombieKilled(z);
+          } else {
+            createSplatter(this, { x: z.x, y: z.y, isKill: false });
           }
         }
       });
@@ -89,7 +92,7 @@ export class Level1Scene extends Phaser.Scene {
   }
 
   private onZombieKilled(zombie: Zombie) {
-    // Splatter and coin drops will be added in Tasks 6 and 7
+    createSplatter(this, { x: zombie.x, y: zombie.y, isKill: true });
     zombie.destroy();
   }
 }
