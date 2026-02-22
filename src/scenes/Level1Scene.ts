@@ -4,6 +4,7 @@ import { Zombie } from '../entities/Zombie';
 import { Boss, BossState } from '../entities/Boss';
 import { createSplatter } from '../systems/Splatter';
 import { GameState } from '../systems/GameState';
+import { SoundManager } from '../systems/SoundManager';
 
 export class Level1Scene extends Phaser.Scene {
   private player!: Player;
@@ -15,12 +16,15 @@ export class Level1Scene extends Phaser.Scene {
   private bossHealthBar!: Phaser.GameObjects.Rectangle;
   private bossHealthBarBg!: Phaser.GameObjects.Rectangle;
   private lastBossHitTime = 0;
+  private soundManager!: SoundManager;
 
   constructor() {
     super({ key: 'Level1' });
   }
 
   create() {
+    this.soundManager = new SoundManager(this);
+
     // Set world bounds wider than screen for scrolling
     this.physics.world.setBounds(0, 0, 3200, 600);
 
@@ -74,10 +78,12 @@ export class Level1Scene extends Phaser.Scene {
 
     // Sword-zombie combat
     this.events.on('player-attack', (hitbox: Phaser.GameObjects.Rectangle) => {
+      this.soundManager.play('sword-swing');
       this.physics.add.overlap(hitbox, this.zombies, (_hitbox, zombie) => {
         const z = zombie as unknown as Zombie;
         if (!z.isDead()) {
           z.takeDamage(GameState.getInstance().swordDamage);
+          this.soundManager.play('splat');
           if (z.isDead()) {
             this.onZombieKilled(z);
           } else {
@@ -153,6 +159,7 @@ export class Level1Scene extends Phaser.Scene {
   }
 
   private onZombieKilled(zombie: Zombie) {
+    this.soundManager.play('splat', { volume: 1.5 });
     createSplatter(this, { x: zombie.x, y: zombie.y, isKill: true });
 
     // Drop coin
@@ -160,6 +167,7 @@ export class Level1Scene extends Phaser.Scene {
     coin.setBounce(0.5);
     this.physics.add.collider(coin, this.ground);
     this.physics.add.overlap(this.player, coin, () => {
+      this.soundManager.play('coin-pickup');
       GameState.getInstance().coins += 5;
       coin.destroy();
     });
