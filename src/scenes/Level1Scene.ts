@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { Player } from '../entities/Player';
 import { Zombie } from '../entities/Zombie';
 import { createSplatter } from '../systems/Splatter';
+import { GameState } from '../systems/GameState';
 
 export class Level1Scene extends Phaser.Scene {
   private player!: Player;
@@ -39,6 +40,9 @@ export class Level1Scene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, 3200, 600);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
+    // Launch HUD overlay
+    this.scene.launch('HUD');
+
     // Spawn zombies
     this.zombies = this.add.group();
     const positions = [400, 600, 900, 1200, 1500, 1800, 2100, 2400];
@@ -58,7 +62,7 @@ export class Level1Scene extends Phaser.Scene {
       const lastHit = this.contactCooldown.get(z) ?? 0;
       if (now - lastHit > 1000) {
         this.contactCooldown.set(z, now);
-        // TODO: player.takeDamage will be added in Task 7
+        this.player.takeDamage(z.getDamage());
       }
     }, undefined, this);
 
@@ -67,7 +71,7 @@ export class Level1Scene extends Phaser.Scene {
       this.physics.add.overlap(hitbox, this.zombies, (_hitbox, zombie) => {
         const z = zombie as unknown as Zombie;
         if (!z.isDead()) {
-          z.takeDamage(10); // Base sword damage
+          z.takeDamage(GameState.getInstance().swordDamage);
           if (z.isDead()) {
             this.onZombieKilled(z);
           } else {
@@ -93,6 +97,16 @@ export class Level1Scene extends Phaser.Scene {
 
   private onZombieKilled(zombie: Zombie) {
     createSplatter(this, { x: zombie.x, y: zombie.y, isKill: true });
+
+    // Drop coin
+    const coin = this.physics.add.sprite(zombie.x, zombie.y - 20, 'coin');
+    coin.setBounce(0.5);
+    this.physics.add.collider(coin, this.ground);
+    this.physics.add.overlap(this.player, coin, () => {
+      GameState.getInstance().coins += 5;
+      coin.destroy();
+    });
+
     zombie.destroy();
   }
 }

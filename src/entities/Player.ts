@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { flashSprite } from '../systems/Combat';
+import { GameState } from '../systems/GameState';
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -6,6 +8,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private jumpForce = -450;
   private attackKey: Phaser.Input.Keyboard.Key;
   private isAttacking = false;
+  private gameState = GameState.getInstance();
   private attackCooldown = 300; // ms
   private lastAttackTime = 0;
 
@@ -72,5 +75,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     });
 
     return hitbox;
+  }
+
+  takeDamage(amount: number) {
+    this.gameState.health -= amount;
+    flashSprite(this.scene, this);
+
+    if (this.gameState.health <= 0) {
+      this.gameState.health = 0;
+      this.scene.events.emit('player-died');
+    }
   }
 }
