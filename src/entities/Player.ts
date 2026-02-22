@@ -12,6 +12,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private gameState = GameState.getInstance();
   private attackCooldown = 300; // ms
   private lastAttackTime = 0;
+  private isSlamming = false;
   private swordOverlay: Phaser.GameObjects.Sprite;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
@@ -98,28 +99,61 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.isAttacking = true;
     this.lastAttackTime = now;
 
-    // Play attack animation
+    // Detect air slam: airborne and falling
+    const isAirborne = !this.body!.blocked.down;
+    const isFalling = this.body!.velocity.y > 0;
+
+    if (isAirborne && isFalling) {
+      // --- DOWNWARD SWORD SLAM ---
+      this.isSlamming = true;
+
+      this.play(PlayerAnims.ATTACK.key, true);
+      this.once('animationcomplete-' + PlayerAnims.ATTACK.key, () => {
+        this.isAttacking = false;
+        this.isSlamming = false;
+      });
+
+      // Hitbox BELOW the player (32 wide, 40 tall)
+      const hitbox = this.scene.add.rectangle(this.x, this.y + 40, 32, 40, 0xffffff, 0.3);
+      this.scene.physics.add.existing(hitbox, false);
+      (hitbox.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+
+      this.scene.events.emit('player-slam', hitbox);
+
+      this.scene.time.delayedCall(150, () => {
+        hitbox.destroy();
+      });
+
+      return hitbox;
+    }
+
+    // --- REGULAR GROUND/AIR SWING ---
     this.play(PlayerAnims.ATTACK.key, true);
     this.once('animationcomplete-' + PlayerAnims.ATTACK.key, () => {
       this.isAttacking = false;
     });
 
-    // Create hitbox in front of player
-    // flipX=true means facing right, flipX=false means facing left
+    // Hitbox in front of player (flipX=true means facing right)
     const offsetX = this.flipX ? 30 : -30;
     const hitbox = this.scene.add.rectangle(this.x + offsetX, this.y, 40, 32, 0xffffff, 0.3);
     this.scene.physics.add.existing(hitbox, false);
     (hitbox.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
 
-    // Emit event so scene can wire up overlaps
     this.scene.events.emit('player-attack', hitbox);
 
-    // Remove hitbox after short duration
     this.scene.time.delayedCall(100, () => {
       hitbox.destroy();
     });
 
     return hitbox;
+  }
+
+  getIsSlamming(): boolean {
+    return this.isSlamming;
+  }
+
+  pogoBounce() {
+    this.setVelocityY(-250);
   }
 
   takeDamage(amount: number) {
