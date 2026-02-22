@@ -150,6 +150,46 @@ export class Level1Scene extends Phaser.Scene {
       }
     });
 
+    // Sword slam combat — 1.5x damage, big splatter, screen shake, pogo bounce
+    this.events.on('player-slam', (hitbox: Phaser.GameObjects.Rectangle) => {
+      this.soundManager.play('sword-swing');
+      const slamDamage = Math.floor(GameState.getInstance().swordDamage * 1.5);
+
+      this.physics.add.overlap(hitbox, this.zombies, (_hitbox, zombie) => {
+        const z = zombie as unknown as Zombie;
+        if (!z.isDead()) {
+          z.takeDamage(slamDamage);
+          this.soundManager.play('splat', { volume: 2 });
+          this.cameras.main.shake(100, 0.005);
+          this.player.pogoBounce();
+
+          if (z.isDead()) {
+            this.onZombieKilled(z);
+          } else {
+            // Big splatter even on non-kill slam hits
+            createSplatter(this, { x: z.x, y: z.y, isKill: true });
+          }
+        }
+      });
+
+      // Slam vs boss
+      if (this.boss && this.boss.getState() === BossState.FIGHTING && !this.boss.isDead()) {
+        this.physics.add.overlap(hitbox, this.boss, () => {
+          if (this.boss && !this.boss.isDead()) {
+            this.boss.takeDamage(slamDamage);
+            this.cameras.main.shake(100, 0.005);
+            this.player.pogoBounce();
+
+            if (this.boss.isDead()) {
+              this.onBossDefeated();
+            } else {
+              createSplatter(this, { x: this.boss.x, y: this.boss.y, isKill: true });
+            }
+          }
+        });
+      }
+    });
+
     this.events.on('player-died', () => {
       this.scene.stop('HUD');
       this.scene.start('GameOver');
