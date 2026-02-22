@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { Assets } from '../assets';
 import { Player } from '../entities/Player';
 import { Zombie } from '../entities/Zombie';
 import { Boss, BossState } from '../entities/Boss';
@@ -11,12 +12,13 @@ export class Level1Scene extends Phaser.Scene {
   private ground!: Phaser.Physics.Arcade.StaticGroup;
   private zombies!: Phaser.GameObjects.Group;
   private contactCooldown = new Map<Zombie, number>();
-  private boss!: Boss;
+  private boss: Boss | null = null;
   private bossTriggered = false;
   private bossHealthBar!: Phaser.GameObjects.Rectangle;
   private bossHealthBarBg!: Phaser.GameObjects.Rectangle;
   private lastBossHitTime = 0;
   private soundManager!: SoundManager;
+  private bgLayers!: { sprite: Phaser.GameObjects.TileSprite; factor: number }[];
 
   constructor() {
     super({ key: 'Level1' });
@@ -27,6 +29,31 @@ export class Level1Scene extends Phaser.Scene {
 
     // Set world bounds wider than screen for scrolling
     this.physics.world.setBounds(0, 0, 3200, 600);
+
+    // --- Parallax backgrounds (further = slower scroll) ---
+    const bg1 = this.add.tileSprite(0, 0, 3200, 600, Assets.CITY_RUIN_BG_1).setOrigin(0, 0);
+    bg1.setScrollFactor(0);
+    bg1.setDepth(-4);
+
+    const bg2 = this.add.tileSprite(0, 0, 3200, 600, Assets.CITY_RUIN_BG_2).setOrigin(0, 0);
+    bg2.setScrollFactor(0);
+    bg2.setDepth(-3);
+
+    const bg3 = this.add.tileSprite(0, 0, 3200, 600, Assets.CITY_RUIN_BG_3).setOrigin(0, 0);
+    bg3.setScrollFactor(0);
+    bg3.setDepth(-2);
+
+    const bg4 = this.add.tileSprite(0, 0, 3200, 600, Assets.CITY_RUIN_BG_4).setOrigin(0, 0);
+    bg4.setScrollFactor(0);
+    bg4.setDepth(-1);
+
+    // Store for parallax scrolling in update
+    this.bgLayers = [
+      { sprite: bg1, factor: 0.1 },
+      { sprite: bg2, factor: 0.3 },
+      { sprite: bg3, factor: 0.5 },
+      { sprite: bg4, factor: 0.7 },
+    ];
 
     // Create ground — tiled across the level width
     this.ground = this.physics.add.staticGroup();
@@ -61,11 +88,13 @@ export class Level1Scene extends Phaser.Scene {
     // Launch HUD overlay
     this.scene.launch('HUD');
 
-    // Spawn zombies
+    // Spawn zombies — alternate between normal and urban variants
     this.zombies = this.add.group();
     const positions = [400, 600, 900, 1200, 1500, 1800, 2100, 2400];
-    for (const x of positions) {
-      const zombie = new Zombie(this, x, 500);
+    for (let i = 0; i < positions.length; i++) {
+      const variant = i % 3 === 2 ? 'urban-zombie' as const : 'zombie' as const;
+      const hp = variant === 'urban-zombie' ? 50 : 30;
+      const zombie = new Zombie(this, positions[i], 500, hp, variant);
       zombie.setTarget(this.player);
       this.zombies.add(zombie);
     }
@@ -103,7 +132,7 @@ export class Level1Scene extends Phaser.Scene {
       // Sword-boss combat
       if (this.boss && this.boss.getState() === BossState.FIGHTING && !this.boss.isDead()) {
         this.physics.add.overlap(hitbox, this.boss, () => {
-          if (!this.boss.isDead()) {
+          if (this.boss && !this.boss.isDead()) {
             this.boss.takeDamage(GameState.getInstance().swordDamage);
             if (this.boss.isDead()) {
               this.onBossDefeated();
@@ -127,7 +156,7 @@ export class Level1Scene extends Phaser.Scene {
 
     // Boss contact damage
     this.physics.add.overlap(this.player, this.boss, () => {
-      if (this.boss.getState() !== BossState.FIGHTING || this.boss.isDead()) return;
+      if (!this.boss || this.boss.getState() !== BossState.FIGHTING || this.boss.isDead()) return;
       const now = this.time.now;
       if (now - this.lastBossHitTime > 1000) {
         this.lastBossHitTime = now;
@@ -142,6 +171,12 @@ export class Level1Scene extends Phaser.Scene {
       (z as Zombie).update(time, delta);
     });
 
+    // Parallax scrolling — shift tileSprite based on camera scroll
+    const camX = this.cameras.main.scrollX;
+    for (const layer of this.bgLayers) {
+      layer.sprite.tilePositionX = camX * layer.factor;
+    }
+
     // Boss trigger check
     if (!this.bossTriggered && this.player.x > 2700) {
       this.bossTriggered = true;
@@ -149,7 +184,7 @@ export class Level1Scene extends Phaser.Scene {
     }
 
     // Boss update
-    if (this.boss && this.boss.getState() === BossState.FIGHTING) {
+    if (this.boss && !this.boss.isDead() && this.boss.getState() === BossState.FIGHTING) {
       this.boss.update(time, delta);
     }
 
@@ -180,10 +215,12 @@ export class Level1Scene extends Phaser.Scene {
       coin.destroy();
     });
 
-    zombie.destroy();
+    zombie.die();
   }
 
   private triggerBossEncounter() {
+    if (!this.boss) return;
+
     // Stop camera following player
     this.cameras.main.stopFollow();
 
@@ -192,6 +229,7 @@ export class Level1Scene extends Phaser.Scene {
 
     // After delay, boss rises
     this.time.delayedCall(1200, () => {
+      if (!this.boss) return;
       this.boss.triggerRise();
 
       // Lock world bounds to boss arena
@@ -229,7 +267,12 @@ export class Level1Scene extends Phaser.Scene {
   }
 
   private onBossDefeated() {
-    createSplatter(this, { x: this.boss.x, y: this.boss.y, isKill: true });
+    if (!this.boss) return;
+
+    const bossX = this.boss.x;
+    const bossY = this.boss.y;
+
+    createSplatter(this, { x: bossX, y: bossY, isKill: true });
 
     // Throne crumbles
     this.boss.destroyThrone();
@@ -238,8 +281,12 @@ export class Level1Scene extends Phaser.Scene {
     if (this.bossHealthBar) this.bossHealthBar.destroy();
     if (this.bossHealthBarBg) this.bossHealthBarBg.destroy();
 
+    // Destroy boss and null out reference before spawning key
+    this.boss.destroy();
+    this.boss = null;
+
     // Drop key #1
-    const key = this.physics.add.sprite(this.boss.x, this.boss.y - 20, 'key');
+    const key = this.physics.add.sprite(bossX, bossY - 20, 'key');
     key.setBounce(0.5);
     this.physics.add.collider(key, this.ground);
     this.physics.add.overlap(this.player, key, () => {
@@ -248,10 +295,9 @@ export class Level1Scene extends Phaser.Scene {
 
       // Transition to Victory after 1500ms
       this.time.delayedCall(1500, () => {
+        this.scene.stop('HUD');
         this.scene.start('Victory');
       });
     });
-
-    this.boss.destroy();
   }
 }

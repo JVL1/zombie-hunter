@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { Assets, PlayerAnims } from '../assets';
 import { flashSprite } from '../systems/Combat';
 import { GameState } from '../systems/GameState';
 
@@ -11,9 +12,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private gameState = GameState.getInstance();
   private attackCooldown = 300; // ms
   private lastAttackTime = 0;
+  private swordOverlay: Phaser.GameObjects.Sprite;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, 'player');
+    super(scene, x, y, Assets.PLAYER_SHEET, 0);
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -21,18 +23,33 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setCollideWorldBounds(true);
     this.setBounce(0.1);
 
+    // Adjust physics body to match character (sprite is 80x64 but character is smaller)
+    this.body!.setSize(24, 48);
+    this.body!.setOffset(28, 16);
+
+    // Sword overlay — same frame layout, rendered on top of player
+    this.swordOverlay = scene.add.sprite(x, y, Assets.PLAYER_SWORD, 0);
+    this.swordOverlay.setDepth(this.depth + 1);
+
     this.cursors = scene.input.keyboard!.createCursorKeys();
     this.attackKey = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+
+    // Sprite faces left by default, flip to face right initially
+    this.setFlipX(true);
+    this.swordOverlay.setFlipX(true);
+
+    this.play(PlayerAnims.IDLE.key);
   }
 
   update() {
     // Horizontal movement
+    // Sprite faces left by default, so flipX=true means facing right
     if (this.cursors.left.isDown) {
       this.setVelocityX(-this.moveSpeed);
-      this.setFlipX(true);
+      this.setFlipX(false); // face left (default direction)
     } else if (this.cursors.right.isDown) {
       this.setVelocityX(this.moveSpeed);
-      this.setFlipX(false);
+      this.setFlipX(true); // flip to face right
     } else {
       this.setVelocityX(0);
     }
@@ -46,6 +63,30 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.attackKey.isDown) {
       this.attack();
     }
+
+    // Animation state (attack animation takes priority)
+    if (!this.isAttacking) {
+      this.updateAnimation();
+    }
+
+    // Sync sword overlay with player position, frame, and flip
+    this.swordOverlay.setPosition(this.x, this.y);
+    this.swordOverlay.setFlipX(this.flipX);
+    this.swordOverlay.setFrame(this.frame.name);
+  }
+
+  private updateAnimation() {
+    if (!this.body!.blocked.down) {
+      if (this.body!.velocity.y < 0) {
+        this.play(PlayerAnims.JUMP.key, true);
+      } else {
+        this.play(PlayerAnims.FALL.key, true);
+      }
+    } else if (Math.abs(this.body!.velocity.x) > 0) {
+      this.play(PlayerAnims.WALK.key, true);
+    } else {
+      this.play(PlayerAnims.IDLE.key, true);
+    }
   }
 
   attack(): Phaser.GameObjects.Rectangle | null {
@@ -57,11 +98,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.isAttacking = true;
     this.lastAttackTime = now;
 
+    // Play attack animation
+    this.play(PlayerAnims.ATTACK.key, true);
+    this.once('animationcomplete-' + PlayerAnims.ATTACK.key, () => {
+      this.isAttacking = false;
+    });
+
     // Create hitbox in front of player
-    const offsetX = this.flipX ? -30 : 30;
-    const hitbox = this.scene.add.rectangle(
-      this.x + offsetX, this.y, 40, 32, 0xffffff, 0.3
-    );
+    // flipX=true means facing right, flipX=false means facing left
+    const offsetX = this.flipX ? 30 : -30;
+    const hitbox = this.scene.add.rectangle(this.x + offsetX, this.y, 40, 32, 0xffffff, 0.3);
     this.scene.physics.add.existing(hitbox, false);
     (hitbox.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
 
@@ -71,7 +117,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // Remove hitbox after short duration
     this.scene.time.delayedCall(100, () => {
       hitbox.destroy();
-      this.isAttacking = false;
     });
 
     return hitbox;
@@ -83,6 +128,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this.gameState.health <= 0) {
       this.gameState.health = 0;
+      this.play(PlayerAnims.DEATH.key);
       this.scene.events.emit('player-died');
     }
   }

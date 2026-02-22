@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { Assets } from '../assets';
 import { Damageable, flashSprite, knockback } from '../systems/Combat';
 
 export enum BossState {
@@ -25,13 +26,16 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
     y: number,
     health: number = 150
   ) {
-    super(scene, x, y, 'boss');
+    super(scene, x, y, Assets.URBAN_ZOMBIE_IDLE, 0);
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
     this.maxHealth = health;
     this.health = health;
+
+    // Boss is larger — scale up the urban zombie sprite
+    this.setScale(1.5);
 
     this.setCollideWorldBounds(true);
     this.setBounce(0.1);
@@ -43,6 +47,8 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
     // Create throne behind boss
     this.throne = scene.add.rectangle(x, y + 20, 80, 96, 0x8b4513);
     this.setDepth(1); // Boss renders in front of throne
+
+    this.play('urban-zombie-idle');
   }
 
   setTarget(target: Phaser.Physics.Arcade.Sprite) {
@@ -84,6 +90,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
       this.target?.x ?? this.x - 1,
       100
     );
+    this.play('urban-zombie-hurt', true);
   }
 
   isDead(): boolean {
@@ -111,11 +118,16 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
 
     if (this.attackTimer > 2000) {
       this.setVelocityX(direction * this.chargeSpeed);
+      this.play('urban-zombie-attack', true);
       if (this.attackTimer > 2500) {
         this.attackTimer = 0;
       }
     } else {
       this.setVelocityX(direction * this.speed);
+      // Only update walk/idle if not playing hurt
+      if (this.anims.currentAnim?.key !== 'urban-zombie-hurt') {
+        this.play('urban-zombie-walk', true);
+      }
     }
   }
 }
