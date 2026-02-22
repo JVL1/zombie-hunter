@@ -180,6 +180,7 @@ export class PreloadScene extends Phaser.Scene {
     this.generatePlaceholder('blood', 0xcc0000, 4, 4);
     this.generatePlaceholder('skin', 0xccaa88, 4, 4);
     this.generatePlaceholder('brain', 0xff69b4, 5, 5);
+    this.generatePlaceholder('dust', 0xccccaa, 4, 4);
     this.generatePlaceholder('ground-tile', 0x555555, 32, 32);
     this.generatePlaceholder('platform-tile', 0x777777, 32, 32);
 

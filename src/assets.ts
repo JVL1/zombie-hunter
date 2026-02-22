@@ -47,6 +47,7 @@ export const Assets = {
   BLOOD: 'blood',
   SKIN: 'skin',
   BRAIN: 'brain',
+  DUST: 'dust',
 
   // Tiles (keep generated for ground/platform until tilemap is built)
   GROUND_TILE: 'ground-tile',
