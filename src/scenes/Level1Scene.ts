@@ -1,9 +1,12 @@
 import Phaser from 'phaser';
 import { Player } from '../entities/Player';
+import { Zombie } from '../entities/Zombie';
 
 export class Level1Scene extends Phaser.Scene {
   private player!: Player;
   private ground!: Phaser.Physics.Arcade.StaticGroup;
+  private zombies!: Phaser.GameObjects.Group;
+  private contactCooldown = new Map<Zombie, number>();
 
   constructor() {
     super({ key: 'Level1' });
@@ -34,15 +37,59 @@ export class Level1Scene extends Phaser.Scene {
     // Camera follows player
     this.cameras.main.setBounds(0, 0, 3200, 600);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+
+    // Spawn zombies
+    this.zombies = this.add.group();
+    const positions = [400, 600, 900, 1200, 1500, 1800, 2100, 2400];
+    for (const x of positions) {
+      const zombie = new Zombie(this, x, 500);
+      zombie.setTarget(this.player);
+      this.zombies.add(zombie);
+    }
+
+    // Zombie-ground collision
+    this.physics.add.collider(this.zombies, this.ground);
+
+    // Player-zombie contact damage
+    this.physics.add.overlap(this.player, this.zombies, (player, zombie) => {
+      const z = zombie as unknown as Zombie;
+      const now = this.time.now;
+      const lastHit = this.contactCooldown.get(z) ?? 0;
+      if (now - lastHit > 1000) {
+        this.contactCooldown.set(z, now);
+        // TODO: player.takeDamage will be added in Task 7
+      }
+    }, undefined, this);
+
+    // Sword-zombie combat
+    this.events.on('player-attack', (hitbox: Phaser.GameObjects.Rectangle) => {
+      this.physics.add.overlap(hitbox, this.zombies, (_hitbox, zombie) => {
+        const z = zombie as unknown as Zombie;
+        if (!z.isDead()) {
+          z.takeDamage(10); // Base sword damage
+          if (z.isDead()) {
+            this.onZombieKilled(z);
+          }
+        }
+      });
+    });
   }
 
-  update() {
+  update(time: number, delta: number) {
     this.player.update();
+    this.zombies.getChildren().forEach((z) => {
+      (z as Zombie).update(time, delta);
+    });
   }
 
   private createPlatform(x: number, y: number, tileCount: number) {
     for (let i = 0; i < tileCount; i++) {
       this.ground.create(x + i * 32 + 16, y, 'platform-tile');
     }
+  }
+
+  private onZombieKilled(zombie: Zombie) {
+    // Splatter and coin drops will be added in Tasks 6 and 7
+    zombie.destroy();
   }
 }
