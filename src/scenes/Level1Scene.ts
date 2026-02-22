@@ -69,6 +69,12 @@ export class Level1Scene extends Phaser.Scene {
     this.createPlatform(2000, 450, 5);
     this.createPlatform(2500, 350, 3);
 
+    // Stepping stone clusters — floating staircases for vertical combat
+    this.createSteppingStones(450, 420, 4, 2, 55, 45);   // cluster 1: near start
+    this.createSteppingStones(950, 430, 3, 2, 60, 50);   // cluster 2: mid-left
+    this.createSteppingStones(1400, 410, 5, 2, 50, 40);  // cluster 3: mid-right (tallest)
+    this.createSteppingStones(2100, 420, 4, 3, 55, 55);  // cluster 4: before boss area
+
     // Create player
     this.player = new Player(this, 100, 500);
     this.physics.add.collider(this.player, this.ground);
@@ -198,6 +204,21 @@ export class Level1Scene extends Phaser.Scene {
   private createPlatform(x: number, y: number, tileCount: number) {
     for (let i = 0; i < tileCount; i++) {
       this.ground.create(x + i * 32 + 16, y, 'platform-tile');
+    }
+  }
+
+  private createSteppingStones(
+    startX: number,
+    baseY: number,
+    steps: number,
+    stepWidth: number = 2,
+    stepHeight: number = 60,
+    stepOffset: number = 50
+  ) {
+    for (let i = 0; i < steps; i++) {
+      const x = startX + i * stepOffset;
+      const y = baseY - i * stepHeight;
+      this.createPlatform(x, y, stepWidth);
     }
   }
 
