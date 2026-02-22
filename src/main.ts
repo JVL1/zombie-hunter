@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
+import { PreloadScene } from './scenes/PreloadScene';
 
-class BootScene extends Phaser.Scene {
+class MainMenuScene extends Phaser.Scene {
   constructor() {
-    super({ key: 'Boot' });
+    super({ key: 'MainMenu' });
   }
 
   create() {
@@ -25,7 +26,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: true,
     },
   },
-  scene: [BootScene],
+  scene: [PreloadScene, MainMenuScene],
 };
 
 new Phaser.Game(config);
