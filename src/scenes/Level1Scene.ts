@@ -101,6 +101,11 @@ export class Level1Scene extends Phaser.Scene {
       }
     });
 
+    this.events.on('player-died', () => {
+      this.scene.stop('HUD');
+      this.scene.start('GameOver');
+    });
+
     // Create boss at end of level
     this.boss = new Boss(this, 2950, 520);
     this.boss.setTarget(this.player);
