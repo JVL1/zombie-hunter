@@ -1,18 +1,6 @@
 import Phaser from 'phaser';
 import { PreloadScene } from './scenes/PreloadScene';
-
-class MainMenuScene extends Phaser.Scene {
-  constructor() {
-    super({ key: 'MainMenu' });
-  }
-
-  create() {
-    this.add.text(400, 300, 'Zombie Hunters', {
-      fontSize: '48px',
-      color: '#ff0000',
-    }).setOrigin(0.5);
-  }
-}
+import { MainMenuScene } from './scenes/MainMenuScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
