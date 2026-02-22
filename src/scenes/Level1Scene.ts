@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Player } from '../entities/Player';
 import { Zombie } from '../entities/Zombie';
+import { Boss, BossState } from '../entities/Boss';
 import { createSplatter } from '../systems/Splatter';
 import { GameState } from '../systems/GameState';
 
@@ -9,6 +10,11 @@ export class Level1Scene extends Phaser.Scene {
   private ground!: Phaser.Physics.Arcade.StaticGroup;
   private zombies!: Phaser.GameObjects.Group;
   private contactCooldown = new Map<Zombie, number>();
+  private boss!: Boss;
+  private bossTriggered = false;
+  private bossHealthBar!: Phaser.GameObjects.Rectangle;
+  private bossHealthBarBg!: Phaser.GameObjects.Rectangle;
+  private lastBossHitTime = 0;
 
   constructor() {
     super({ key: 'Level1' });
@@ -79,7 +85,36 @@ export class Level1Scene extends Phaser.Scene {
           }
         }
       });
+
+      // Sword-boss combat
+      if (this.boss && this.boss.getState() === BossState.FIGHTING && !this.boss.isDead()) {
+        this.physics.add.overlap(hitbox, this.boss, () => {
+          if (!this.boss.isDead()) {
+            this.boss.takeDamage(GameState.getInstance().swordDamage);
+            if (this.boss.isDead()) {
+              this.onBossDefeated();
+            } else {
+              createSplatter(this, { x: this.boss.x, y: this.boss.y, isKill: false });
+            }
+          }
+        });
+      }
     });
+
+    // Create boss at end of level
+    this.boss = new Boss(this, 2950, 520);
+    this.boss.setTarget(this.player);
+    this.physics.add.collider(this.boss, this.ground);
+
+    // Boss contact damage
+    this.physics.add.overlap(this.player, this.boss, () => {
+      if (this.boss.getState() !== BossState.FIGHTING || this.boss.isDead()) return;
+      const now = this.time.now;
+      if (now - this.lastBossHitTime > 1000) {
+        this.lastBossHitTime = now;
+        this.player.takeDamage(this.boss.getDamage());
+      }
+    }, undefined, this);
   }
 
   update(time: number, delta: number) {
@@ -87,6 +122,23 @@ export class Level1Scene extends Phaser.Scene {
     this.zombies.getChildren().forEach((z) => {
       (z as Zombie).update(time, delta);
     });
+
+    // Boss trigger check
+    if (!this.bossTriggered && this.player.x > 2700) {
+      this.bossTriggered = true;
+      this.triggerBossEncounter();
+    }
+
+    // Boss update
+    if (this.boss && this.boss.getState() === BossState.FIGHTING) {
+      this.boss.update(time, delta);
+    }
+
+    // Boss health bar update
+    if (this.bossHealthBar && this.boss && !this.boss.isDead()) {
+      const healthPercent = this.boss.health / this.boss.maxHealth;
+      this.bossHealthBar.width = 300 * healthPercent;
+    }
   }
 
   private createPlatform(x: number, y: number, tileCount: number) {
@@ -108,5 +160,77 @@ export class Level1Scene extends Phaser.Scene {
     });
 
     zombie.destroy();
+  }
+
+  private triggerBossEncounter() {
+    // Stop camera following player
+    this.cameras.main.stopFollow();
+
+    // Pan camera to boss area
+    this.cameras.main.pan(2900, 300, 1000, 'Power2');
+
+    // After delay, boss rises
+    this.time.delayedCall(1200, () => {
+      this.boss.triggerRise();
+
+      // Lock world bounds to boss arena
+      this.physics.world.setBounds(2600, 0, 600, 600);
+
+      // Re-follow player within locked bounds
+      this.cameras.main.setBounds(2600, 0, 600, 600);
+      this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+
+      // Show boss health bar
+      this.showBossHealthBar();
+    });
+  }
+
+  private showBossHealthBar() {
+    // Boss name text
+    const bossNameText = this.add.text(400, 50, 'MUTATED ZOMBIE', {
+      fontSize: '16px',
+      color: '#ff0000',
+      fontStyle: 'bold',
+    });
+    bossNameText.setOrigin(0.5);
+    bossNameText.setScrollFactor(0);
+    bossNameText.setDepth(100);
+
+    // Health bar background
+    this.bossHealthBarBg = this.add.rectangle(400, 70, 304, 14, 0x333333);
+    this.bossHealthBarBg.setScrollFactor(0);
+    this.bossHealthBarBg.setDepth(100);
+
+    // Health bar fill
+    this.bossHealthBar = this.add.rectangle(400, 70, 300, 10, 0xff0000);
+    this.bossHealthBar.setScrollFactor(0);
+    this.bossHealthBar.setDepth(101);
+  }
+
+  private onBossDefeated() {
+    createSplatter(this, { x: this.boss.x, y: this.boss.y, isKill: true });
+
+    // Throne crumbles
+    this.boss.destroyThrone();
+
+    // Hide health bar
+    if (this.bossHealthBar) this.bossHealthBar.destroy();
+    if (this.bossHealthBarBg) this.bossHealthBarBg.destroy();
+
+    // Drop key #1
+    const key = this.physics.add.sprite(this.boss.x, this.boss.y - 20, 'key');
+    key.setBounce(0.5);
+    this.physics.add.collider(key, this.ground);
+    this.physics.add.overlap(this.player, key, () => {
+      GameState.getInstance().collectKey(0);
+      key.destroy();
+
+      // Transition to Victory after 1500ms
+      this.time.delayedCall(1500, () => {
+        this.scene.start('Victory');
+      });
+    });
+
+    this.boss.destroy();
   }
 }
