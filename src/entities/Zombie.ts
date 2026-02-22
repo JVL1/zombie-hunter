@@ -16,6 +16,8 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite implements Damageable {
   private target: Phaser.Physics.Arcade.Sprite | null = null;
   private variant: ZombieVariant;
   private dying = false;
+  private lastJumpAttempt = 0;
+  private jumpAttemptInterval = 1500; // ms between failed jumps
 
   constructor(
     scene: Phaser.Scene,
@@ -88,7 +90,7 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite implements Damageable {
     });
   }
 
-  update(_time: number, delta: number) {
+  update(time: number, delta: number) {
     if (this.isDead() || this.dying) return;
 
     if (!this.target) {
@@ -99,10 +101,16 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite implements Damageable {
     const distToPlayer = Phaser.Math.Distance.BetweenPoints(this, this.target);
 
     if (distToPlayer < this.aggroRange) {
-      // Chase player
-      const direction = this.target.x < this.x ? -1 : 1;
-      this.setVelocityX(direction * this.speed * 1.5);
-      this.setFlipX(direction < 0);
+      if (this.isPlayerAbove()) {
+        // Player is above — stop and try to jump (fail hilariously)
+        this.setVelocityX(0);
+        this.tryJump(time);
+      } else {
+        // Chase player horizontally
+        const direction = this.target.x < this.x ? -1 : 1;
+        this.setVelocityX(direction * this.speed * 1.5);
+        this.setFlipX(direction < 0);
+      }
     } else {
       this.patrol(delta);
     }
@@ -115,6 +123,38 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite implements Damageable {
         this.play(this.animKey('idle'), true);
       }
     }
+  }
+
+  private isPlayerAbove(): boolean {
+    if (!this.target) return false;
+    const dx = Math.abs(this.target.x - this.x);
+    const dy = this.y - this.target.y; // positive means player is above
+    return dx < 120 && dy > 60;
+  }
+
+  private tryJump(time: number) {
+    if (time - this.lastJumpAttempt < this.jumpAttemptInterval) return;
+    if (!this.body!.blocked.down) return; // only jump from ground
+
+    this.lastJumpAttempt = time;
+
+    // Small hop that doesn't reach platform height
+    this.setVelocityY(-150);
+
+    // Dust puff when landing
+    this.scene.time.delayedCall(400, () => {
+      if (this.active && this.body!.blocked.down) {
+        this.scene.add.particles(this.x, this.y + 20, 'dust', {
+          speed: { min: 20, max: 60 },
+          angle: { min: 200, max: 340 },
+          scale: { start: 1, end: 0 },
+          lifespan: 300,
+          quantity: 5,
+          emitting: false,
+          gravityY: 50,
+        }).explode();
+      }
+    });
   }
 
   private patrol(delta: number) {
