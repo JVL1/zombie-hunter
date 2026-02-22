@@ -14,7 +14,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
   maxHealth: number;
   private damage = 20;
   private speed = 100;
-  private state = BossState.SITTING;
+  private bossState = BossState.SITTING;
   private target: Phaser.Physics.Arcade.Sprite | null = null;
   private throne: Phaser.GameObjects.Rectangle;
   private attackTimer = 0;
@@ -56,7 +56,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
   }
 
   getState(): BossState {
-    return this.state;
+    return this.bossState;
   }
 
   getDamage(): number {
@@ -64,8 +64,8 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
   }
 
   triggerRise() {
-    if (this.state !== BossState.SITTING) return;
-    this.state = BossState.RISING;
+    if (this.bossState !== BossState.SITTING) return;
+    this.bossState = BossState.RISING;
 
     this.scene.tweens.add({
       targets: this,
@@ -73,7 +73,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
       duration: 800,
       ease: 'Power2',
       onComplete: () => {
-        this.state = BossState.FIGHTING;
+        this.bossState = BossState.FIGHTING;
         (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(true);
         this.setImmovable(false);
       },
@@ -81,7 +81,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
   }
 
   takeDamage(amount: number) {
-    if (this.state !== BossState.FIGHTING) return;
+    if (this.bossState !== BossState.FIGHTING) return;
 
     this.health -= amount;
     flashSprite(this.scene, this);
@@ -109,7 +109,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
   }
 
   update(time: number, delta: number) {
-    if (this.state !== BossState.FIGHTING || !this.target) return;
+    if (this.bossState !== BossState.FIGHTING || !this.target) return;
 
     this.attackTimer += delta;
 

@@ -240,13 +240,57 @@ public/assets/
 - **Parallax backgrounds** — 4-layer city ruin tileSprites with scroll factors
 - **Camera** — follows player, pans to boss, locks to arena
 
-### Next Steps
-- **Tile-based level geometry** — replace colored rectangle ground/platforms with city tileset. Consider Tiled editor for tilemap construction.
-- **Sword overlay compositing** — layer `player-sword.png` over base player sprite for weapon visibility
+### Recent Fixes (post-completion)
+- **Player walking backwards** — sprite faces left by default; swapped `setFlipX` logic
+- **Sword overlay** — `player-sword.png` now composited on top of player sprite, synced per frame
+- **Boss defeat crash** — nulling `this.boss` after destroy to prevent frozen game loop
+- **Attack hitbox direction** — corrected to match new flip convention
+
+### Known Bugs
+- **Freeze on back-scroll** — game freezes if player scrolls back past level/arena bounds
+- **Boss throne placeholder** — throne is a brown rectangle, needs real art
+
+### Next Steps (Prioritized)
+
+**Immediate Fixes**
+- **Fix off-screen scroll freeze** — investigate world bounds / camera bounds interaction when player moves backwards
+- **Boss throne art** — replace brown rectangle placeholder with a proper throne sprite or tileset construction
+
+**Milestone 2 — Level 1 Polish & New Mechanics**
+- **Stepping Stones + Air Slam** — floating staircase platforms, downward sword slam, zombie jump-fail comedy (designed, see [stepping-stones-design.md](2026-02-22-stepping-stones-design.md))
+- **Tile-based level geometry** — replace colored rectangle ground/platforms with city tileset PNGs
 - **Sound effects** — find and integrate free sound effect packs (sword swing, splat, coin, zombie groan)
 - **Game balance playtesting** — tune player speed, zombie HP, boss difficulty, coin economy
-- **Level 2 planning** — Broken Down Forest theme, new tileset, zombie woman/wild zombie variants
-- **Shop system** — Blacksmith (swords) and Apocalypse Shop (items) between levels
+
+**Milestone 3 — Shops & Progression**
+- **Blacksmith Shop scene** — buy swords (Rusty Blade → Iron Cleaver → Shadow Fang → Flame Edge → Giant Sun Splicer), upgrade stats (speed/damage/reach)
+- **Apocalypse Shop scene** — health potions, temporary shields, extra lives
+- **Shop flow** — Victory screen → Shop → next level transition
+- **Sword system implementation** — multiple sword types with distinct stats, visual swap on player sprite
+
+**Milestone 4 — Level 2 (Broken Down Forest)**
+- **Forest tileset** — acquire free forest pixel art pack
+- **Forest parallax backgrounds** — new 4-layer backgrounds
+- **New zombie variants** — zombie woman, wild zombie from existing downloaded packs
+- **Level 2 boss** — Zombie Pack (horde boss) on dead-tree throne
+- **Level design** — new platform layout, environmental variety
+
+**Milestone 5 — Levels 3-5**
+- Level 3: Abandoned Railroad (Zanters, train-parts throne)
+- Level 4: Abandoned Amusement Park (mutated zombies, carnival throne)
+- Level 5: Dark Underworld (zombie hordes, bone-shadow throne, portal unlock)
+
+**Milestone 6 — Final Level & Endgame**
+- Level 6: Abandoned Underworld with octopus zombies
+- Final Boss: Giant Brain Behemoth Titan Zombie
+- Giant Sun Splicer required for final boss
+- Victory ending / credits
+
+**Future / Nice-to-Have**
+- Electron Mac app packaging
+- Save system (persist progress between sessions)
+- Gamepad / controller support
+- More zombie variant animations from unused downloaded packs
 
 ## First Milestone: Playable Level 1
 

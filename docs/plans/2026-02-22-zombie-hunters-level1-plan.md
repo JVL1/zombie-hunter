@@ -36,10 +36,27 @@
 - **Task 6**: Backgrounds use `tileSprite` with `tilePositionX` parallax (not `image` with `setDisplaySize` + `scrollFactor`).
 - **Task 8**: Boss reuses urban-zombie sprites at 1.5x scale instead of zombie sprites at 2x scale.
 
+### Recent Fixes
+- **Player walking backwards**: Sprite faces left by default — swapped `setFlipX` logic so the character faces the direction of movement.
+- **Sword overlay added**: `player-sword.png` now renders on top of the player, synced to position/frame/flip every update tick.
+- **Boss defeat freeze**: `this.boss` was not nulled after `destroy()`, causing `update()` and overlap callbacks to crash on the destroyed sprite. Fixed with null guards and `this.boss = null` after destroy.
+- **Attack hitbox direction**: Updated to match new flip logic (flipX=true → facing right).
+
+### Known Bugs
+- **Freeze when scrolling back off-screen**: Game freezes if player goes back past the left edge of the level or boss arena. Likely a world bounds / camera bounds issue.
+
 ### Remaining Work for Level 1
+- **Boss throne art**: Throne is currently a brown rectangle placeholder. Needs real sprite or tileset art.
 - **Tile-based level geometry**: Ground/platforms still use generated colored rectangles. City tileset PNGs are loaded but not used for level construction yet.
 - **Audio files**: All SoundManager call sites wired up, but no actual audio files loaded.
-- **Sword visual**: `player-sword.png` overlay not yet composited onto player sprite.
+- **Off-screen scroll freeze**: Investigate and fix the freeze when player moves back past level bounds.
+
+### What's Next
+
+Level 1 implementation is complete. Next work is tracked in:
+- [Ideas Roadmap](../ideas-roadmap.md) — full milestone breakdown
+- [Stepping Stones Design](2026-02-22-stepping-stones-design.md) — first new mechanic (designed, ready for implementation plan)
+- [Game Design Doc](2026-02-22-zombie-hunters-design.md) — updated next steps by milestone
 
 ---
 

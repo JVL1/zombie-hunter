@@ -19,6 +19,7 @@ export class Level1Scene extends Phaser.Scene {
   private lastBossHitTime = 0;
   private soundManager!: SoundManager;
   private bgLayers!: { sprite: Phaser.GameObjects.TileSprite; factor: number }[];
+  private bossOverlap: Phaser.Physics.Arcade.Collider | null = null;
 
   constructor() {
     super({ key: 'Level1' });
@@ -70,10 +71,11 @@ export class Level1Scene extends Phaser.Scene {
     this.createPlatform(2500, 350, 3);
 
     // Stepping stone clusters — floating staircases for vertical combat
-    this.createSteppingStones(450, 420, 4, 2, 55, 45);   // cluster 1: near start
-    this.createSteppingStones(950, 430, 3, 2, 60, 50);   // cluster 2: mid-left
-    this.createSteppingStones(1400, 410, 5, 2, 50, 40);  // cluster 3: mid-right (tallest)
-    this.createSteppingStones(2100, 420, 4, 3, 55, 55);  // cluster 4: before boss area
+    // Ground is at y=584, player is 48px tall. First stone must be >=500 to walk under (84px gap).
+    this.createSteppingStones(450, 490, 4, 2, 40, 50);   // cluster 1: near start
+    this.createSteppingStones(950, 495, 3, 2, 40, 55);   // cluster 2: mid-left
+    this.createSteppingStones(1400, 490, 5, 2, 35, 45);  // cluster 3: mid-right (tallest)
+    this.createSteppingStones(2100, 490, 4, 3, 40, 55);  // cluster 4: before boss area
 
     // Create player
     this.player = new Player(this, 100, 500);
@@ -200,8 +202,8 @@ export class Level1Scene extends Phaser.Scene {
     this.boss.setTarget(this.player);
     this.physics.add.collider(this.boss, this.ground);
 
-    // Boss contact damage
-    this.physics.add.overlap(this.player, this.boss, () => {
+    // Boss contact damage — store collider so we can destroy it on boss defeat
+    this.bossOverlap = this.physics.add.overlap(this.player, this.boss as Phaser.Physics.Arcade.Sprite, () => {
       if (!this.boss || this.boss.getState() !== BossState.FIGHTING || this.boss.isDead()) return;
       const now = this.time.now;
       if (now - this.lastBossHitTime > 1000) {
