@@ -125,6 +125,10 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('coin', 'assets/sprites/items/coin.png');
     this.load.image('key', 'assets/sprites/items/key.png');
 
+    // --- City ground/platform tiles ---
+    this.load.image('ground-tile', 'assets/tiles/city/ground-tile.png');
+    this.load.image('platform-tile', 'assets/tiles/city/platform-tile.png');
+
     // --- Audio ---
     this.load.audio('soundtrack', 'assets/audio/soundtrack.mp3');
   }
@@ -213,9 +217,6 @@ export class PreloadScene extends Phaser.Scene {
     this.generatePlaceholder('skin', 0xccaa88, 4, 4);
     this.generatePlaceholder('brain', 0xff69b4, 5, 5);
     this.generatePlaceholder('dust', 0xccccaa, 4, 4);
-    this.generatePlaceholder('ground-tile', 0x555555, 32, 32);
-    this.generatePlaceholder('platform-tile', 0x777777, 32, 32);
-
     this.scene.start('MainMenu');
   }
 
