@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { GameState } from '../systems/GameState';
+import { MusicManager } from '../systems/MusicManager';
+import { SynthAudio } from '../systems/SynthAudio';
 
 export class VictoryScene extends Phaser.Scene {
   constructor() {
@@ -8,6 +10,9 @@ export class VictoryScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
+    MusicManager.getInstance().stop();
+    SynthAudio.getInstance().play('victory');
+
     const gs = GameState.getInstance();
     const level = gs.currentLevel;
 

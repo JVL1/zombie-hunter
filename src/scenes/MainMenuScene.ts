@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { GameState } from '../systems/GameState';
+import { MusicManager } from '../systems/MusicManager';
 
 export class MainMenuScene extends Phaser.Scene {
   private bloodDrips: Phaser.GameObjects.Rectangle[] = [];
@@ -10,6 +12,11 @@ export class MainMenuScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
+
+    // Start menu music
+    const mm = MusicManager.getInstance();
+    mm.init(this);
+    mm.play('menu');
 
     // Dark background with subtle fog
     this.cameras.main.setBackgroundColor('#0a0a0a');
@@ -105,11 +112,18 @@ export class MainMenuScene extends Phaser.Scene {
     // Zombie silhouettes shambling in the background
     this.createShamblingSilhouettes(width, height);
 
+    // Check URL for ?level=N to skip straight to a level
+    const params = new URLSearchParams(window.location.search);
+    const levelParam = params.get('level');
+    const startLevel = levelParam ? parseInt(levelParam, 10) : 1;
+
     this.input.keyboard!.once('keydown-ENTER', () => {
       // Screen flash on start
+      MusicManager.getInstance().stop();
       this.cameras.main.flash(300, 150, 0, 0);
       this.time.delayedCall(300, () => {
-        this.scene.start('Level1');
+        GameState.getInstance().currentLevel = startLevel;
+        this.scene.start(`Level${startLevel}`);
       });
     });
   }

@@ -29,7 +29,9 @@ export class Level1Scene extends Phaser.Scene {
   create() {
     this.soundManager = new SoundManager();
     GameState.getInstance().currentLevel = 1;
-    MusicManager.getInstance().play('level');
+    const mm = MusicManager.getInstance();
+    mm.init(this);
+    mm.play('level');
 
     // Set world bounds wider than screen for scrolling
     this.physics.world.setBounds(0, 0, 3200, 600);

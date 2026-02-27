@@ -10,6 +10,7 @@ import { spawnPoisonCloud } from '../systems/PoisonCloud';
 import { CrackingGround } from '../systems/CrackingGround';
 import { GameState } from '../systems/GameState';
 import { SoundManager } from '../systems/SoundManager';
+import { MusicManager } from '../systems/MusicManager';
 import { Damageable } from '../systems/Combat';
 
 export class Level2Scene extends Phaser.Scene {
@@ -35,6 +36,9 @@ export class Level2Scene extends Phaser.Scene {
   create() {
     this.soundManager = new SoundManager();
     GameState.getInstance().currentLevel = 2;
+    const mm = MusicManager.getInstance();
+    mm.init(this);
+    mm.play('level');
 
     // Reset per-scene state
     this.contactCooldown.clear();
@@ -132,6 +136,7 @@ export class Level2Scene extends Phaser.Scene {
         this.contactCooldown.set(e, now);
         const dmg = (e as unknown as { getDamage(): number }).getDamage();
         this.player.takeDamage(dmg);
+        this.soundManager.play('player-hurt');
       }
     }, undefined, this);
 
@@ -178,6 +183,7 @@ export class Level2Scene extends Phaser.Scene {
       if (now - this.lastBossHitTime > 1000) {
         this.lastBossHitTime = now;
         this.player.takeDamage(this.boss.getDamage());
+        this.soundManager.play('player-hurt');
       }
     }, undefined, this);
   }
@@ -345,6 +351,8 @@ export class Level2Scene extends Phaser.Scene {
     this.time.delayedCall(1200, () => {
       if (!this.boss) return;
 
+      this.soundManager.play('boss-roar');
+      MusicManager.getInstance().play('boss');
       this.boss.triggerEmerge();
 
       // Lock arena bounds
