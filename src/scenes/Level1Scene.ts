@@ -6,6 +6,7 @@ import { Boss, BossState } from '../entities/Boss';
 import { createSplatter } from '../systems/Splatter';
 import { GameState } from '../systems/GameState';
 import { SoundManager } from '../systems/SoundManager';
+import { MusicManager } from '../systems/MusicManager';
 
 export class Level1Scene extends Phaser.Scene {
   private player!: Player;
@@ -26,7 +27,9 @@ export class Level1Scene extends Phaser.Scene {
   }
 
   create() {
-    this.soundManager = new SoundManager(this);
+    this.soundManager = new SoundManager();
+    GameState.getInstance().currentLevel = 1;
+    MusicManager.getInstance().play('level');
 
     // Set world bounds wider than screen for scrolling
     this.physics.world.setBounds(0, 0, 3200, 600);
@@ -118,6 +121,7 @@ export class Level1Scene extends Phaser.Scene {
       if (now - lastHit > 1000) {
         this.contactCooldown.set(z, now);
         this.player.takeDamage(z.getDamage());
+        this.soundManager.play('player-hurt');
       }
     }, undefined, this);
 
@@ -209,6 +213,7 @@ export class Level1Scene extends Phaser.Scene {
       if (now - this.lastBossHitTime > 1000) {
         this.lastBossHitTime = now;
         this.player.takeDamage(this.boss.getDamage());
+        this.soundManager.play('player-hurt');
       }
     }, undefined, this);
   }
@@ -293,6 +298,8 @@ export class Level1Scene extends Phaser.Scene {
     // After delay, boss rises
     this.time.delayedCall(1200, () => {
       if (!this.boss) return;
+      this.soundManager.play('boss-roar');
+      MusicManager.getInstance().play('boss');
       this.boss.triggerRise();
 
       // Lock world bounds to boss arena
