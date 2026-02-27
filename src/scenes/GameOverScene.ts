@@ -23,8 +23,11 @@ export class GameOverScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     this.input.keyboard!.once('keydown-ENTER', () => {
-      GameState.getInstance().reset();
-      this.scene.start('Level1');
+      const gs = GameState.getInstance();
+      const level = gs.currentLevel;
+      gs.reset();
+      gs.currentLevel = level;
+      this.scene.start('Level' + level);
       this.scene.launch('HUD');
     });
   }
