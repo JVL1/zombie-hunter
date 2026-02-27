@@ -92,6 +92,16 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image(Assets.CITY_FLOOR_TILES, 'assets/tiles/city/floor-tiles.png');
     this.load.image(Assets.CITY_BUILDING_TILES, 'assets/tiles/city/building-tiles.png');
     this.load.image(Assets.CITY_DECORATION_TILES, 'assets/tiles/city/decoration-tiles.png');
+
+    // --- Level 2 enemy & boss sprites ---
+    this.load.image('zombie-deer', 'assets/sprites/forest/zombie-deer.png');
+    this.load.image('zombie-wolf', 'assets/sprites/forest/zombie-wolf.png');
+    this.load.image('plant-zombie', 'assets/sprites/forest/plant-zombie.png');
+    this.load.image('spider-hybrid', 'assets/sprites/forest/spider-hybrid.png');
+    this.load.image('crab-spider-boss', 'assets/sprites/forest/crab-spider-boss.png');
+
+    // --- Audio ---
+    this.load.audio('soundtrack', 'assets/audio/soundtrack.mp3');
   }
 
   create() {
@@ -185,12 +195,6 @@ export class PreloadScene extends Phaser.Scene {
     this.generatePlaceholder('platform-tile', 0x777777, 32, 32);
 
     // --- Level 2 placeholders ---
-    this.generatePlaceholder('zombie-deer', 0x8B6914, 48, 40);
-    this.generatePlaceholder('zombie-wolf', 0x555555, 52, 36);
-    this.generatePlaceholder('plant-zombie', 0x2E7D32, 40, 64);
-    this.generatePlaceholder('spider-hybrid', 0x6A0DAD, 44, 36);
-    this.generatePlaceholder('crab-spider-boss', 0x8B0000, 96, 80);
-
     this.generatePlaceholder('forest-ground-tile', 0x3E2723, 32, 32);
     this.generatePlaceholder('forest-platform-tile', 0x5D4037, 32, 32);
 
