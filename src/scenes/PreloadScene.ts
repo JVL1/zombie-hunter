@@ -100,6 +100,17 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('spider-hybrid', 'assets/sprites/forest/spider-hybrid.png');
     this.load.image('crab-spider-boss', 'assets/sprites/forest/crab-spider-boss.png');
 
+    // --- Level 2 environment & effect sprites ---
+    this.load.image('cocoon', 'assets/sprites/forest/cocoon.png');
+    this.load.image('web-decoration', 'assets/sprites/forest/web-decoration.png');
+    this.load.image('lava-crack', 'assets/sprites/forest/lava-crack.png');
+    this.load.image('poison-cloud', 'assets/sprites/forest/poison-cloud.png');
+    this.load.image('laser-beam', 'assets/sprites/forest/laser-beam.png');
+    this.load.image('shockwave', 'assets/sprites/forest/shockwave.png');
+
+    // --- Level 1 props ---
+    this.load.image('throne', 'assets/sprites/throne.png');
+
     // --- Audio ---
     this.load.audio('soundtrack', 'assets/audio/soundtrack.mp3');
   }
@@ -186,7 +197,6 @@ export class PreloadScene extends Phaser.Scene {
     this.generatePlaceholder('coin', 0xf1c40f, 16, 16, 'circle');
     this.generatePlaceholder('key', 0xffd700, 16, 24);
     this.generatePlaceholder('sword-hitbox', 0xffffff, 40, 32, 'rect', 0.3);
-    this.generatePlaceholder('throne', 0x8b4513, 80, 96);
     this.generatePlaceholder('blood', 0xcc0000, 4, 4);
     this.generatePlaceholder('skin', 0xccaa88, 4, 4);
     this.generatePlaceholder('brain', 0xff69b4, 5, 5);
@@ -202,13 +212,6 @@ export class PreloadScene extends Phaser.Scene {
     this.generatePlaceholder('forest-bg-2', 0x2D4A2D, 800, 600, 'rect', 0.5);
     this.generatePlaceholder('forest-bg-3', 0x1A331A, 800, 600, 'rect', 0.3);
     this.generatePlaceholder('forest-bg-4', 0x0D1F0D, 800, 600, 'rect', 0.2);
-
-    this.generatePlaceholder('cocoon', 0xD4C5A9, 60, 80);
-    this.generatePlaceholder('web-decoration', 0xEEEEEE, 48, 48, 'rect', 0.4);
-    this.generatePlaceholder('lava-crack', 0xFF4500, 64, 16);
-    this.generatePlaceholder('laser-beam', 0xFF0000, 800, 8);
-    this.generatePlaceholder('shockwave', 0xBDB76B, 40, 12);
-    this.generatePlaceholder('poison-cloud', 0x00FF00, 48, 48, 'circle', 0.4);
 
     this.scene.start('MainMenu');
   }
