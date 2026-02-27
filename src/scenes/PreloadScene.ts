@@ -184,6 +184,28 @@ export class PreloadScene extends Phaser.Scene {
     this.generatePlaceholder('ground-tile', 0x555555, 32, 32);
     this.generatePlaceholder('platform-tile', 0x777777, 32, 32);
 
+    // --- Level 2 placeholders ---
+    this.generatePlaceholder('zombie-deer', 0x8B6914, 48, 40);
+    this.generatePlaceholder('zombie-wolf', 0x555555, 52, 36);
+    this.generatePlaceholder('plant-zombie', 0x2E7D32, 40, 64);
+    this.generatePlaceholder('spider-hybrid', 0x6A0DAD, 44, 36);
+    this.generatePlaceholder('crab-spider-boss', 0x8B0000, 96, 80);
+
+    this.generatePlaceholder('forest-ground-tile', 0x3E2723, 32, 32);
+    this.generatePlaceholder('forest-platform-tile', 0x5D4037, 32, 32);
+
+    this.generatePlaceholder('forest-bg-1', 0x1B3A1B, 800, 600, 'rect', 0.9);
+    this.generatePlaceholder('forest-bg-2', 0x2D4A2D, 800, 600, 'rect', 0.5);
+    this.generatePlaceholder('forest-bg-3', 0x1A331A, 800, 600, 'rect', 0.3);
+    this.generatePlaceholder('forest-bg-4', 0x0D1F0D, 800, 600, 'rect', 0.2);
+
+    this.generatePlaceholder('cocoon', 0xD4C5A9, 60, 80);
+    this.generatePlaceholder('web-decoration', 0xEEEEEE, 48, 48, 'rect', 0.4);
+    this.generatePlaceholder('lava-crack', 0xFF4500, 64, 16);
+    this.generatePlaceholder('laser-beam', 0xFF0000, 800, 8);
+    this.generatePlaceholder('shockwave', 0xBDB76B, 40, 12);
+    this.generatePlaceholder('poison-cloud', 0x00FF00, 48, 48, 'circle', 0.4);
+
     this.scene.start('MainMenu');
   }
 
