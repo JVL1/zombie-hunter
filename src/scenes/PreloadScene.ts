@@ -111,6 +111,20 @@ export class PreloadScene extends Phaser.Scene {
     // --- Level 1 props ---
     this.load.image('throne', 'assets/sprites/throne.png');
 
+    // --- Forest backgrounds ---
+    this.load.image('forest-bg-1', 'assets/backgrounds/forest-bg-1.png');
+    this.load.image('forest-bg-2', 'assets/backgrounds/forest-bg-2.png');
+    this.load.image('forest-bg-3', 'assets/backgrounds/forest-bg-3.png');
+    this.load.image('forest-bg-4', 'assets/backgrounds/forest-bg-4.png');
+
+    // --- Forest tiles ---
+    this.load.image('forest-ground-tile', 'assets/tiles/forest/forest-ground-tile.png');
+    this.load.image('forest-platform-tile', 'assets/tiles/forest/forest-platform-tile.png');
+
+    // --- Items ---
+    this.load.image('coin', 'assets/sprites/items/coin.png');
+    this.load.image('key', 'assets/sprites/items/key.png');
+
     // --- Audio ---
     this.load.audio('soundtrack', 'assets/audio/soundtrack.mp3');
   }
@@ -194,8 +208,6 @@ export class PreloadScene extends Phaser.Scene {
     });
 
     // --- Generate placeholder textures for assets we don't have yet ---
-    this.generatePlaceholder('coin', 0xf1c40f, 16, 16, 'circle');
-    this.generatePlaceholder('key', 0xffd700, 16, 24);
     this.generatePlaceholder('sword-hitbox', 0xffffff, 40, 32, 'rect', 0.3);
     this.generatePlaceholder('blood', 0xcc0000, 4, 4);
     this.generatePlaceholder('skin', 0xccaa88, 4, 4);
@@ -203,15 +215,6 @@ export class PreloadScene extends Phaser.Scene {
     this.generatePlaceholder('dust', 0xccccaa, 4, 4);
     this.generatePlaceholder('ground-tile', 0x555555, 32, 32);
     this.generatePlaceholder('platform-tile', 0x777777, 32, 32);
-
-    // --- Level 2 placeholders ---
-    this.generatePlaceholder('forest-ground-tile', 0x3E2723, 32, 32);
-    this.generatePlaceholder('forest-platform-tile', 0x5D4037, 32, 32);
-
-    this.generatePlaceholder('forest-bg-1', 0x1B3A1B, 800, 600, 'rect', 0.9);
-    this.generatePlaceholder('forest-bg-2', 0x2D4A2D, 800, 600, 'rect', 0.5);
-    this.generatePlaceholder('forest-bg-3', 0x1A331A, 800, 600, 'rect', 0.3);
-    this.generatePlaceholder('forest-bg-4', 0x0D1F0D, 800, 600, 'rect', 0.2);
 
     this.scene.start('MainMenu');
   }
