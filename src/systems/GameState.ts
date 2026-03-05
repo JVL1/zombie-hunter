@@ -7,6 +7,7 @@ export class GameState {
   keys: boolean[] = [false, false, false, false, false];
   currentSword = 'Rusty Blade';
   swordDamage = 10;
+  currentLevel = 1;
 
   static getInstance(): GameState {
     if (!GameState.instance) {
@@ -21,6 +22,7 @@ export class GameState {
     this.keys = [false, false, false, false, false];
     this.currentSword = 'Rusty Blade';
     this.swordDamage = 10;
+    this.currentLevel = 1;
   }
 
   collectKey(index: number) {

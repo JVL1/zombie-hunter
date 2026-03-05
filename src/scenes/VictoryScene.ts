@@ -1,4 +1,7 @@
 import Phaser from 'phaser';
+import { GameState } from '../systems/GameState';
+import { MusicManager } from '../systems/MusicManager';
+import { SynthAudio } from '../systems/SynthAudio';
 
 export class VictoryScene extends Phaser.Scene {
   constructor() {
@@ -7,6 +10,11 @@ export class VictoryScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
+    MusicManager.getInstance().stop();
+    SynthAudio.getInstance().play('victory');
+
+    const gs = GameState.getInstance();
+    const level = gs.currentLevel;
 
     this.add.text(width / 2, height / 3, 'LEVEL COMPLETE!', {
       fontSize: '48px',
@@ -15,7 +23,7 @@ export class VictoryScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, height / 2, 'Key #1 Collected!', {
+    this.add.text(width / 2, height / 2, `Key #${level} Collected!`, {
       fontSize: '24px',
       color: '#ffffff',
       fontFamily: 'monospace',
@@ -28,7 +36,14 @@ export class VictoryScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     this.input.keyboard!.once('keydown-ENTER', () => {
-      this.scene.start('MainMenu'); // Later: go to shop, then Level 2
+      if (level < 2) {
+        const nextLevel = level + 1;
+        gs.currentLevel = nextLevel;
+        this.scene.start('Level' + nextLevel);
+        this.scene.launch('HUD');
+      } else {
+        this.scene.start('MainMenu');
+      }
     });
   }
 }

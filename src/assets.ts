@@ -53,6 +53,27 @@ export const Assets = {
   GROUND_TILE: 'ground-tile',
   PLATFORM_TILE: 'platform-tile',
 
+  // --- Level 2: Forest ---
+  ZOMBIE_DEER: 'zombie-deer',
+  ZOMBIE_WOLF: 'zombie-wolf',
+  PLANT_ZOMBIE: 'plant-zombie',
+  SPIDER_HYBRID: 'spider-hybrid',
+  CRAB_SPIDER_BOSS: 'crab-spider-boss',
+
+  FOREST_GROUND_TILE: 'forest-ground-tile',
+  FOREST_PLATFORM_TILE: 'forest-platform-tile',
+  FOREST_BG_1: 'forest-bg-1',
+  FOREST_BG_2: 'forest-bg-2',
+  FOREST_BG_3: 'forest-bg-3',
+  FOREST_BG_4: 'forest-bg-4',
+
+  COCOON: 'cocoon',
+  WEB_DECORATION: 'web-decoration',
+  LAVA_CRACK: 'lava-crack',
+  LASER_BEAM: 'laser-beam',
+  SHOCKWAVE: 'shockwave',
+  POISON_CLOUD: 'poison-cloud',
+
   // Audio (no files yet)
   SWORD_SWING: 'sword-swing',
   ZOMBIE_GROAN: 'zombie-groan',

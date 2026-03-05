@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PreloadScene } from './scenes/PreloadScene';
 import { MainMenuScene } from './scenes/MainMenuScene';
 import { Level1Scene } from './scenes/Level1Scene';
+import { Level2Scene } from './scenes/Level2Scene';
 import { HUDScene } from './scenes/HUDScene';
 import { VictoryScene } from './scenes/VictoryScene';
 import { GameOverScene } from './scenes/GameOverScene';
@@ -18,7 +19,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [PreloadScene, MainMenuScene, Level1Scene, HUDScene, VictoryScene, GameOverScene],
+  scene: [PreloadScene, MainMenuScene, Level1Scene, Level2Scene, HUDScene, VictoryScene, GameOverScene],
 };
 
 new Phaser.Game(config);

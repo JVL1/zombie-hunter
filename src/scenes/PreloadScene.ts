@@ -92,6 +92,45 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image(Assets.CITY_FLOOR_TILES, 'assets/tiles/city/floor-tiles.png');
     this.load.image(Assets.CITY_BUILDING_TILES, 'assets/tiles/city/building-tiles.png');
     this.load.image(Assets.CITY_DECORATION_TILES, 'assets/tiles/city/decoration-tiles.png');
+
+    // --- Level 2 enemy & boss sprites ---
+    this.load.image('zombie-deer', 'assets/sprites/forest/zombie-deer.png');
+    this.load.image('zombie-wolf', 'assets/sprites/forest/zombie-wolf.png');
+    this.load.image('plant-zombie', 'assets/sprites/forest/plant-zombie.png');
+    this.load.image('spider-hybrid', 'assets/sprites/forest/spider-hybrid.png');
+    this.load.image('crab-spider-boss', 'assets/sprites/forest/crab-spider-boss.png');
+
+    // --- Level 2 environment & effect sprites ---
+    this.load.image('cocoon', 'assets/sprites/forest/cocoon.png');
+    this.load.image('web-decoration', 'assets/sprites/forest/web-decoration.png');
+    this.load.image('lava-crack', 'assets/sprites/forest/lava-crack.png');
+    this.load.image('poison-cloud', 'assets/sprites/forest/poison-cloud.png');
+    this.load.image('laser-beam', 'assets/sprites/forest/laser-beam.png');
+    this.load.image('shockwave', 'assets/sprites/forest/shockwave.png');
+
+    // --- Level 1 props ---
+    this.load.image('throne', 'assets/sprites/throne.png');
+
+    // --- Forest backgrounds ---
+    this.load.image('forest-bg-1', 'assets/backgrounds/forest-bg-1.png');
+    this.load.image('forest-bg-2', 'assets/backgrounds/forest-bg-2.png');
+    this.load.image('forest-bg-3', 'assets/backgrounds/forest-bg-3.png');
+    this.load.image('forest-bg-4', 'assets/backgrounds/forest-bg-4.png');
+
+    // --- Forest tiles ---
+    this.load.image('forest-ground-tile', 'assets/tiles/forest/forest-ground-tile.png');
+    this.load.image('forest-platform-tile', 'assets/tiles/forest/forest-platform-tile.png');
+
+    // --- Items ---
+    this.load.image('coin', 'assets/sprites/items/coin.png');
+    this.load.image('key', 'assets/sprites/items/key.png');
+
+    // --- City ground/platform tiles ---
+    this.load.image('ground-tile', 'assets/tiles/city/ground-tile.png');
+    this.load.image('platform-tile', 'assets/tiles/city/platform-tile.png');
+
+    // --- Audio ---
+    this.load.audio('soundtrack', 'assets/audio/soundtrack.mp3');
   }
 
   create() {
@@ -173,17 +212,11 @@ export class PreloadScene extends Phaser.Scene {
     });
 
     // --- Generate placeholder textures for assets we don't have yet ---
-    this.generatePlaceholder('coin', 0xf1c40f, 16, 16, 'circle');
-    this.generatePlaceholder('key', 0xffd700, 16, 24);
     this.generatePlaceholder('sword-hitbox', 0xffffff, 40, 32, 'rect', 0.3);
-    this.generatePlaceholder('throne', 0x8b4513, 80, 96);
     this.generatePlaceholder('blood', 0xcc0000, 4, 4);
     this.generatePlaceholder('skin', 0xccaa88, 4, 4);
     this.generatePlaceholder('brain', 0xff69b4, 5, 5);
     this.generatePlaceholder('dust', 0xccccaa, 4, 4);
-    this.generatePlaceholder('ground-tile', 0x555555, 32, 32);
-    this.generatePlaceholder('platform-tile', 0x777777, 32, 32);
-
     this.scene.start('MainMenu');
   }
 
