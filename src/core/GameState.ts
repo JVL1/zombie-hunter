@@ -1,4 +1,5 @@
 import { COMBAT, PLAYER } from '../config';
+import { LEVELS, levelByNumber, type LevelDef } from '../levels';
 
 const SAVE_KEY = 'zombie-hunters-save-v2';
 
@@ -6,6 +7,7 @@ interface SaveData {
   coins: number;
   keys: boolean[];
   bestStreak: number;
+  currentLevel: number;
 }
 
 // Run + persistent state. Coins/keys/best streak survive page reloads via localStorage.
@@ -18,6 +20,7 @@ export class GameState {
   keys: boolean[] = [false, false, false, false, false];
   currentSword = 'Rusty Blade';
   swordDamage = COMBAT.baseSwordDamage;
+  currentLevel = 1;
 
   // Kill streak (combo meter)
   streak = 0;
@@ -52,6 +55,16 @@ export class GameState {
     return this.keys.filter(Boolean).length;
   }
 
+  // Level beaten: move to the next built level (sticks at the last one) and save.
+  advanceLevel() {
+    this.currentLevel = Math.min(this.currentLevel + 1, LEVELS.length);
+    this.save();
+  }
+
+  get currentLevelDef(): LevelDef {
+    return levelByNumber(this.currentLevel);
+  }
+
   heal(amount: number) {
     this.health = Math.min(this.maxHealth, this.health + amount);
   }
@@ -64,7 +77,12 @@ export class GameState {
   }
 
   save() {
-    const data: SaveData = { coins: this.coins, keys: this.keys, bestStreak: this.bestStreak };
+    const data: SaveData = {
+      coins: this.coins,
+      keys: this.keys,
+      bestStreak: this.bestStreak,
+      currentLevel: this.currentLevel,
+    };
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     } catch {
@@ -80,6 +98,11 @@ export class GameState {
       this.coins = data.coins ?? 0;
       this.keys = Array.isArray(data.keys) && data.keys.length === 5 ? data.keys : this.keys;
       this.bestStreak = data.bestStreak ?? 0;
+      // Legacy v2-release saves predate currentLevel; clamp anything weird to built levels
+      const lvl = (data as { currentLevel?: unknown }).currentLevel;
+      this.currentLevel = Number.isInteger(lvl)
+        ? Math.min(Math.max(lvl as number, 1), LEVELS.length)
+        : 1;
     } catch {
       // Corrupt save — start fresh
     }
