@@ -69,3 +69,26 @@ src/
 ## Scope of "done" for this rebuild
 All currently built content rebuilt and playable end-to-end in the browser:
 Menu → Level 1 (8 zombies, platforms, 4 stepping-stone clusters, fire barrels, rain) → boss cinematic + 2-phase fight → key drop → Victory; death → GameOver → retry. Verified by browser playtest.
+
+## Status: COMPLETE (2026-06-10)
+
+Shipped in commits `64dd269` (rebuild) and `76b65e6` (difficulty tune). Verified by automated
+browser playtest in both Canvas and WebGL renderers. Bugs found & fixed during verification:
+stepping stones wedging the player (need >56px clearance under floating geometry), first zombie
+spawn-camping idle players, dash speed decaying through drag.
+
+## Next: Levels 2 and 3 (planned 2026-06-11)
+
+Note: only Level 1 ever existed in code. Levels 2-6 exist solely as specs in
+`docs/plans/2026-02-22-zombie-hunters-design.md` — they are new builds on the v2 engine, not rebuilds.
+
+- **Level 2 — Broken Down Forest:** decayed forest, zombie hordes, horde-pack boss on a dead-tree
+  throne, Key #2. No forest tileset on disk — follow the v2 approach: procedural tile textures +
+  re-tinted parallax (forest greens/browns), Light2D fireflies/moonbeams instead of fire barrels.
+- **Level 3 — Abandoned Railroad:** zombie-driven train sequence, giant zombies ("Zanters"),
+  dirt-mutated boss on a train-parts throne, Key #3.
+- Wire Victory screen to advance Level 1 → 2 → 3 (currently returns to MainMenu) and track
+  current level in GameState; key index per level.
+- Extract a shared LevelScene base (backdrop/ambience/combat wiring from Level1Scene) before
+  building Level 2 so levels 2+ are mostly data + theme.
+- Shops between levels (Blacksmith / Apocalypse) remain a separate later milestone.
