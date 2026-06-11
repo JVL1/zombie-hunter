@@ -12,6 +12,72 @@
 
 **Reviewed:** multi-reviewer design review (Claude + Gemini + Codex, round 1, 2026-06-11) — 1 critical and 5 major findings incorporated below.
 
+## Execution status (session ended 2026-06-11, Tasks 0-8 DONE)
+
+Executed via `executing-plans` in the git worktree `.claude/worktrees/levels-2-3` on branch
+`feat/levels-2-3` (13 commits ahead of local `main`). Every task was implemented by a subagent,
+reviewed by the 3-model `/pr-review` loop (Claude+Gemini+Codex), fixed, and playtested. All green:
+33 vitest tests, tsc clean, Levels 1 AND 2 verified playable end-to-end in the browser.
+
+- [DONE] Task 0 — branch `feat/levels-2-3` (worktree; fast-forwarded to local main — see gotchas)
+- [DONE] Task 1 — `src/levels.ts` registry + invariant tests (`3dfe134`, fixes `c32a5be`)
+- [DONE] Task 2 — GameState.currentLevel (`1e96c6e`)
+- [DONE] Task 3 — BaseLevelScene extraction, L1 = 74 lines (`df98216`, fixes `bcfdb0b`)
+- [DONE] Task 4 — level-aware routing + number-key level select (`c82d626`)
+- [DONE] Task 5 — disgusting/zanter variant table (`c953d7d`, fixes `3e6df85`)
+- [DONE] Task 6 — BossDef + SUMMONING state + minion waves (`fa1d0c2`, fixes `22647a0`)
+- [DONE] Task 7 — forest textures + mossy parallax bakes (`b6b9614`)
+- [DONE] Task 8 — Level 2 Broken Down Forest, full 8-point playtest pass (`4983e1f`, fixes `4927e9a`)
+- [TODO] Task 9 — railroad textures
+- [TODO] Task 10 — Level 3 + train sequence (flip `levelTwo.nextSceneKey` → 'Level3')
+- [TODO] Task 11 — full-progression playtest (Canvas + `--headed` WebGL)
+- [TODO] Task 12 — docs + merge `feat/levels-2-3` → main (see additions below)
+
+### Decisions & contract changes made during execution (beyond the plan text)
+
+- **`GameState.maxUnlockedLevel`** (unlock high-water mark) + `replayLevel(n)` — replaying a lower
+  level moves `currentLevel` (so GameOver retries it) but never lowers the unlock. MainMenu gates
+  level-select and the hint on `maxUnlockedLevel`.
+- **Legacy save migration**: saves predating level tracking derive progress from earned keys
+  (key #1 ⇒ level 2 unlocked & resumed). Modern saves never re-derive (replays stay put).
+- **Sprite `setTint` is a silent no-op on the Canvas renderer** (verified against Phaser source —
+  zero tint refs in the canvas renderer). Variant/boss colors are a WebGL nicety; on canvas they
+  degrade to scale/behavior identity, same bucket as the hit-flash and Light2D. Task 12 must add
+  this to CLAUDE.md's gotchas (the existing gotcha only mentions TileSprite).
+- **`flashSprite` restore tints resolve at restore time** (4th arg accepts `number | (() => ...)`),
+  and Boss has a state-aware `currentBaseTint()` so hits during telegraphs restore the warning
+  color. Enrage check runs BEFORE the flash in `takeDamage` (enraging hit keeps the red).
+- **Summon tuning lives in config.BOSS**: `summonTelegraphMs: 500`, `summonOpeningGraceMs: 2500`;
+  first-summon time = `max(grace, attackIntervalMs + 300)` so slow bosses still open with a charge.
+- **Spawn heights are variant-aware** (`BaseLevelScene.zombieSpawnY`) so scaled bodies (Zanter)
+  don't embed in the ground; summoned minions never materialize within 70px of the player.
+- **BossDef invariant tests** added to `levels.test.ts` (summon counts/cap/interval sanity,
+  at-least-one-attack, enraged-faster ordering).
+- Level 2 def deltas from plan: second spawn moved 565 → 590 (was clipping the first stair stone);
+  moonbeams `setScale(1, 1.6)` so the shaft reaches the ground, lights tweened (NOT flickerLights —
+  moonlight shouldn't strobe like fire).
+
+### Tooling gotchas hit this session (will bite Tasks 9-12 too)
+
+- This machine's `prefer-serena-advisory` PreToolUse hook errors on bare `grep`/`rg` — use
+  `git grep` (or awk/Read). `destructive-cmd-guard` blocks `git reset --hard` — use
+  `git merge --ff-only` for fast-forwards.
+- `origin/main` is 3 commits BEHIND local `main` (the v2 rebuild was never pushed). Fresh worktrees
+  branch from origin — fast-forward them to local `main` first.
+- IDE/TS diagnostics in this session often reflected the MAIN checkout, not the worktree — trust
+  `npx tsc --noEmit` run inside the worktree.
+- Phaser 3.90 typings: `Geom.Rectangle` needs an `as unknown as RandomZoneSource` cast for particle
+  `emitZone` (runtime-correct; verified against Phaser source — see Level2Scene).
+
+### Task 12 additions discovered in review
+
+- CLAUDE.md gotchas: sprite tint is WebGL-only (not just TileSprite); update "Adding a New Level"
+  to the def-based recipe; amend the shop step (shops are a separate post-Level-3 milestone — the
+  L1→L2 transition is intentionally shopless for now).
+- Open product questions for Henry (defaults shipped): Pack-King-as-horde interpretation works
+  great in playtest; static train (Task 10) still pending his sign-off; horde packs pull 4-5
+  zombies at once — numerically fair (i-frames cap DPS) but check the "surrounded" feel with him.
+
 > **Repo constraints (read before any commit):**
 > - The pre-commit hook requires tests *written and run in the session* before `git commit`. Run `npm test` immediately before committing, in the same session.
 > - A bash hook blocks `&&` / `;` / multiline shell commands. Run every command separately (e.g., `git add ...` then `git commit ...` as two calls).
