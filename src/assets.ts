@@ -54,6 +54,19 @@ export const Assets = {
   DECAL_1: 'decal-1',
   DECAL_2: 'decal-2',
   DECAL_3: 'decal-3',
+
+  // Forest (Level 2) — baked parallax + generated tiles/props
+  FOREST_NIGHT_FAR: 'forest-night-far',
+  FOREST_NIGHT_MID: 'forest-night-mid',
+  FOREST_NIGHT_NEAR: 'forest-night-near',
+  FOREST_GROUND_TOP: 'gen-forest-ground-top',
+  FOREST_GROUND_FILL: 'gen-forest-ground-fill',
+  LOG_PLATFORM: 'gen-log-platform',
+  STUMP_STONE: 'gen-stump-stone',
+  DEAD_TREE: 'gen-dead-tree',
+  THRONE_TREE: 'gen-throne-tree',
+  P_FIREFLY: 'p-firefly',
+  MOONBEAM: 'gen-moonbeam',
 } as const;
 
 // Player sheet rows (10 cols): 0 idle(5) 1 walk(8) 2 run(8) 3 jump(4) 4 fall(4) 5 attack(6) 6 death(10)
