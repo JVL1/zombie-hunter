@@ -6,3 +6,4 @@ assets-raw/
 .pre-rebuild-backup/
 .playwright-mcp/
 .serena/
+.playtest/

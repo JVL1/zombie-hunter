@@ -52,6 +52,10 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   protected fogFar!: Phaser.GameObjects.TileSprite;
   protected fogNear!: Phaser.GameObjects.TileSprite;
   protected fogDriftMultiplier = 1;
+  // Accumulated fog-drift time. Multiplying absolute elapsed time by
+  // fogDriftMultiplier would retroactively re-scale the whole session when the
+  // multiplier changes (a visible fog teleport) — so only accumulate deltas.
+  private fogTime = 0;
   protected flickerLights: Array<{ light: Phaser.GameObjects.Light; base: number; seed: number }> =
     [];
 
@@ -76,6 +80,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.contactCooldown.clear();
     this.lastBossHitTime = 0;
     this.fogDriftMultiplier = 1;
+    this.fogTime = 0;
     this.bossHealthBar = null;
     this.bossHealthBarBg = null;
     this.bossNameText = null;
@@ -643,8 +648,9 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     for (const layer of this.bgLayers) {
       layer.sprite.tilePositionX = (camX * layer.factor) / layer.sprite.scaleX;
     }
-    this.fogFar.tilePositionX = camX * 0.2 + time * 0.008 * this.fogDriftMultiplier;
-    this.fogNear.tilePositionX = camX * 0.9 + time * 0.015 * this.fogDriftMultiplier;
+    this.fogTime += delta * this.fogDriftMultiplier;
+    this.fogFar.tilePositionX = camX * 0.2 + this.fogTime * 0.008;
+    this.fogNear.tilePositionX = camX * 0.9 + this.fogTime * 0.015;
 
     // Light flicker
     for (const f of this.flickerLights) {

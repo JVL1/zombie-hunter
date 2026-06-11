@@ -6,7 +6,7 @@ import type { ZombieVariant } from './config';
 export interface ZombieSpawn {
   x: number;
   variant: ZombieVariant;
-  y?: number; // optional explicit spawn height (train roofs); default is groundY - 56
+  y?: number; // optional explicit spawn height (train roofs); default puts the body bottom 8px above the ground (variant-aware)
 }
 
 export interface BossDef {
@@ -193,15 +193,18 @@ const levelTwo: LevelDef = {
 //   - car roof top surface 372, underside 388 → 88px corridor under the cars
 //     (urban body 80px fits; a Zanter at 116px can't follow — comedy)
 //   - locomotive roof top surface 348 (climb the loco, step down onto car 1)
-//   - loco→car-1 gap is 14px (can't fall through); between-car gaps are 68px
-//     (fall through onto the track, double-jump back out)
+//   - every walkable roof is 6 slab tiles = 192px (roofW). The locomotive BODY
+//     is 200px wide, so its physical loco→car-1 gap is 18px (can't fall
+//     through); between-car gaps are 68px (fall through onto the track,
+//     double-jump back out)
 export const TRAIN = {
   locomotiveX: 1390,
-  locomotiveW: 200,
+  locomotiveW: 200, // decoration body width; the walkable roof is roofW
   locoRoofY: 356,
   carXs: [1600, 1860, 2120, 2380],
   carW: 192,
   carRoofY: 380,
+  roofW: 192, // walkable roof span (6 x 32px slabs) for loco AND cars
 };
 
 const levelThree: LevelDef = {
@@ -250,8 +253,11 @@ const levelThree: LevelDef = {
     { x: 1880, variant: 'zanter', y: 255 }, // car 2 roof (zanter body bottom ~348)
     { x: 2065, variant: 'urban', y: 290 }, // car 3 roof
     { x: 2400, variant: 'zanter', y: 255 }, // car 4 roof
+    // Final guards before the boss yard. The Zanter sits at 2560, clear of the
+    // [2700] platform band and the [2850] staircase — at 2900 its 58x116 body
+    // would spawn enclosing the second stair stone (x 2884-2920, y 365-379)
+    { x: 2560, variant: 'zanter' },
     { x: 2650, variant: 'zombie' },
-    { x: 2900, variant: 'zanter' },
   ],
   boss: {
     name: 'DIRT MUTATED ZOMBIE',

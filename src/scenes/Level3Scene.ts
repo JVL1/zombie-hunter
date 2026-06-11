@@ -40,10 +40,11 @@ export class Level3Scene extends BaseLevelScene {
     }
   }
 
-  // Row of 6 roof slab solids (32x16 each) centered on a car/locomotive
+  // Row of roof slab solids (32x16 each, TRAIN.roofW total) centered on a
+  // car/locomotive — the invariant tests model walkable spans off roofW
   private roofRow(centerX: number, y: number) {
-    const left = centerX - 96;
-    for (let i = 0; i < 6; i++) {
+    const left = centerX - TRAIN.roofW / 2;
+    for (let i = 0; i < TRAIN.roofW / 32; i++) {
       lit(this.solids.create(left + i * 32 + 16, y, Assets.TRAIN_CAR_TOP).setDepth(3));
     }
   }
@@ -97,15 +98,16 @@ export class Level3Scene extends BaseLevelScene {
   }
 
   update(time: number, delta: number) {
-    super.update(time, delta);
     // The "moving train" illusion runs while the camera is over the train:
     // speed lines streak past and the fog rushes by 3x faster. The camera
     // deadzone trails the player by ~535px moving right, so 820 switches the
-    // effect on as the player mounts the locomotive nose (x≈1355), not a car
-    // and a half later.
+    // effect on as the player climbs the locomotive's cab end (x≈1355), not
+    // a car and a half later. Gate BEFORE super.update() so the fog drift
+    // this frame already uses the new multiplier.
     const camX = this.cameras.main.scrollX;
     const overTrain = camX > 820 && camX < 2400;
     this.speedLines.emitting = overTrain;
     this.fogDriftMultiplier = overTrain ? 3 : 1;
+    super.update(time, delta);
   }
 }

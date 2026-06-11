@@ -86,11 +86,18 @@ describe('level registry integrity', () => {
 });
 
 describe('level 3 train geometry', () => {
-  // Roof spans (left/right edges) for the locomotive and the four boxcars
+  // WALKABLE roof spans (left/right edges) for the locomotive and the four
+  // boxcars — every roof is roofW of solids, regardless of body width
   const spans = [
-    [TRAIN.locomotiveX - TRAIN.locomotiveW / 2, TRAIN.locomotiveX + TRAIN.locomotiveW / 2],
-    ...TRAIN.carXs.map((x) => [x - TRAIN.carW / 2, x + TRAIN.carW / 2]),
+    [TRAIN.locomotiveX - TRAIN.roofW / 2, TRAIN.locomotiveX + TRAIN.roofW / 2],
+    ...TRAIN.carXs.map((x) => [x - TRAIN.roofW / 2, x + TRAIN.roofW / 2]),
   ];
+
+  it('roof solids never extend past the decoration bodies they sit on', () => {
+    expect(TRAIN.roofW).toBeLessThanOrEqual(TRAIN.locomotiveW);
+    expect(TRAIN.roofW).toBeLessThanOrEqual(TRAIN.carW);
+    expect(TRAIN.roofW % 32).toBe(0); // whole 32px slab tiles
+  });
 
   it('leaves room for an urban zombie (80px body) under the car roofs', () => {
     expect(WORLD.groundY - (TRAIN.carRoofY + 8)).toBeGreaterThan(80);
@@ -116,12 +123,15 @@ describe('level 3 train geometry', () => {
     expect(roofSpawns.length).toBeGreaterThan(0);
     for (const s of roofSpawns) {
       expect(spans.some(([l, r]) => s.x > l + 20 && s.x < r - 20)).toBe(true);
-      expect(s.y!).toBeLessThan(TRAIN.carRoofY - 40); // spawns above the roof, falls onto it — no tunneling distance
-      // Body bottoms (sprite center + scaled body reach) must clear the roof
-      // slab top (carRoofY - 8) or the zombie spawns embedded in / through it
+      // The body bottom (sprite center + scaled body reach) must start ABOVE
+      // the slab top (carRoofY - 8) — spawning overlapped means embedding —
+      // but within 40px of it, so the drop can't build tunneling speed
+      // through the 16px slab
       const v = ZOMBIE.variants[s.variant];
       const bodyBottom = s.y! + (v.base === 'urban' ? 64 : 48) * v.scale;
-      expect(bodyBottom).toBeLessThan(TRAIN.carRoofY - 8);
+      const fall = TRAIN.carRoofY - 8 - bodyBottom;
+      expect(fall).toBeGreaterThan(0);
+      expect(fall).toBeLessThanOrEqual(40);
     }
   });
 });
