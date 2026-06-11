@@ -28,10 +28,24 @@ reviewed by the 3-model `/pr-review` loop (Claude+Gemini+Codex), fixed, and play
 - [DONE] Task 6 — BossDef + SUMMONING state + minion waves (`fa1d0c2`, fixes `22647a0`)
 - [DONE] Task 7 — forest textures + mossy parallax bakes (`b6b9614`)
 - [DONE] Task 8 — Level 2 Broken Down Forest, full 8-point playtest pass (`4983e1f`, fixes `4927e9a`)
-- [TODO] Task 9 — railroad textures
-- [TODO] Task 10 — Level 3 + train sequence (flip `levelTwo.nextSceneKey` → 'Level3')
-- [TODO] Task 11 — full-progression playtest (Canvas + `--headed` WebGL)
-- [TODO] Task 12 — docs + merge `feat/levels-2-3` → main (see additions below)
+- [DONE] Task 9 — railroad textures (`237c339`; review clean, 1 structural note surfaced below)
+- [DONE] Task 10 — Level 3 + train sequence (`139ce5f`, fixes `422ae57`; chain L2→L3 flipped)
+- [DONE] Task 11 — full-progression playtest: Canvas 17/17 PASS (incl. legit L1 boss fight,
+  listener dedupe, legacy-save migration, replay locks); WebGL headed 10/11 PASS + FPS flag
+  resolved (agent-browser Chromium caps rAF at 30Hz — production build identical, engine healthy)
+- [DONE] Task 12 — docs + merge `feat/levels-2-3` → main
+- [EXTRA] Level 1 boss tuned easier with Henry (`07057a2`): hp 230, contact 16, attacks 2.5s/1.8s.
+  Playtest verdict: "appropriately challenging, slightly forgiving."
+
+### Session 2 (2026-06-11) review-fix notes
+- Codex caught the L3 Zanter at x=2900 spawning with a stair stone fully inside its body —
+  relocated to x=2560 (clear ground; comment in levels.ts documents the geometry).
+- Gemini caught fog drift multiplying ABSOLUTE elapsed time (fog teleport when the multiplier
+  changed) — replaced with a `fogTime` delta accumulator in BaseLevelScene.
+- Walkable train roofs are 192px (`TRAIN.roofW`, 6×32 slabs) even though the loco body is 200px —
+  data + tests now model this; real loco→car-1 gap is 18px.
+- Surfaced, not auto-fixed: PreloadScene is becoming a texture monolith — consider extracting
+  per-theme generators to `src/art/*.ts` before Level 4 (Gemini, structural).
 
 ### Decisions & contract changes made during execution (beyond the plan text)
 

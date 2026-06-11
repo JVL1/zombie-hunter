@@ -77,18 +77,24 @@ browser playtest in both Canvas and WebGL renderers. Bugs found & fixed during v
 stepping stones wedging the player (need >56px clearance under floating geometry), first zombie
 spawn-camping idle players, dash speed decaying through drag.
 
-## Next: Levels 2 and 3 (planned 2026-06-11)
+## Levels 2 and 3 (SHIPPED 2026-06-11)
 
-Note: only Level 1 ever existed in code. Levels 2-6 exist solely as specs in
-`docs/plans/2026-02-22-zombie-hunters-design.md` — they are new builds on the v2 engine, not rebuilds.
+Status: complete — see `docs/plans/2026-06-11-levels-2-3-implementation.md` for the full
+implementation record. What shipped:
 
-- **Level 2 — Broken Down Forest:** decayed forest, zombie hordes, horde-pack boss on a dead-tree
-  throne, Key #2. No forest tileset on disk — follow the v2 approach: procedural tile textures +
-  re-tinted parallax (forest greens/browns), Light2D fireflies/moonbeams instead of fire barrels.
-- **Level 3 — Abandoned Railroad:** zombie-driven train sequence, giant zombies ("Zanters"),
-  dirt-mutated boss on a train-parts throne, Key #3.
-- Wire Victory screen to advance Level 1 → 2 → 3 (currently returns to MainMenu) and track
-  current level in GameState; key index per level.
-- Extract a shared LevelScene base (backdrop/ambience/combat wiring from Level1Scene) before
-  building Level 2 so levels 2+ are mostly data + theme.
-- Shops between levels (Blacksmith / Apocalypse) remain a separate later milestone.
+- **Shared engine:** `src/levels.ts` data registry (`LevelDef`/`BossDef`, layout-invariant vitest
+  suite) + `BaseLevelScene` extraction — Level 1 shrank to a ~74-line theme subclass. Victory
+  chains levels, GameOver retries the current level, MainMenu number keys replay unlocked levels,
+  `GameState` tracks `currentLevel`/`maxUnlockedLevel` with legacy-save migration.
+- **Level 2 — The Broken Down Forest:** horde packs of `disgusting` zombies, procedural forest
+  tiles + mossy parallax bakes, fireflies/moonbeams/dead trees, ZOMBIE PACK KING (charge boss
+  with capped minion summons) on the dead-tree throne, Key #2.
+- **Level 3 — The Abandoned Railroad:** parked-but-"moving" train (locomotive + 4 boxcars from
+  exported `TRAIN` geometry data, fought across the roofs; speed lines/smoke/zombie-driver gag
+  sell the motion), giant `zanter` variants that can't fit under the train, DIRT MUTATED ZOMBIE
+  on the train-parts throne, Key #3.
+- Verified by automated browser playtest: full 3-level progression + persistence/replay/edge
+  cases (Canvas) and lights/tints/postFX (headed WebGL). Level 1 boss difficulty tuned with
+  Henry (2026-06-11).
+- Shops between levels (Blacksmith / Apocalypse) remain a separate later milestone; Level 4+
+  are still specs in `docs/plans/2026-02-22-zombie-hunters-design.md`.
