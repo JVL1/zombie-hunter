@@ -67,6 +67,20 @@ export const Assets = {
   THRONE_TREE: 'gen-throne-tree',
   P_FIREFLY: 'p-firefly',
   MOONBEAM: 'gen-moonbeam',
+
+  // Railroad (Level 3) — baked parallax + generated tiles/props
+  RAIL_NIGHT_FAR: 'rail-night-far',
+  RAIL_NIGHT_MID: 'rail-night-mid',
+  RAIL_NIGHT_NEAR: 'rail-night-near',
+  RAIL_GROUND_TOP: 'gen-rail-ground-top',
+  RAIL_GROUND_FILL: 'gen-rail-ground-fill',
+  TRAIN_CAR: 'gen-train-car',
+  TRAIN_CAR_TOP: 'gen-train-car-top',
+  LOCOMOTIVE: 'gen-locomotive',
+  SIGNAL_LAMP: 'gen-signal-lamp',
+  THRONE_TRAIN: 'gen-throne-train',
+  P_SMOKE: 'p-smoke',
+  P_SPEEDLINE: 'p-speedline',
 } as const;
 
 // Player sheet rows (10 cols): 0 idle(5) 1 walk(8) 2 run(8) 3 jump(4) 4 fall(4) 5 attack(6) 6 death(10)
