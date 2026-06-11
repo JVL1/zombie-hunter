@@ -10,10 +10,20 @@ export function lit<T extends Phaser.GameObjects.GameObject>(obj: T): T {
   return obj;
 }
 
-export function flashSprite(sprite: Phaser.GameObjects.Sprite, color = 0xffffff, ms = 80) {
+export function flashSprite(
+  sprite: Phaser.GameObjects.Sprite,
+  color = 0xffffff,
+  ms = 80,
+  restoreTint?: number
+) {
   sprite.setTintFill(color);
   sprite.scene.time.delayedCall(ms, () => {
-    if (sprite.active) sprite.clearTint();
+    if (!sprite.active) return;
+    if (restoreTint !== undefined) {
+      sprite.setTint(restoreTint);
+    } else {
+      sprite.clearTint();
+    }
   });
 }
 

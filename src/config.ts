@@ -8,7 +8,17 @@ export const WORLD = {
   groundY: 476, // top surface of the ground
 };
 
-export type ZombieVariant = 'zombie' | 'urban';
+export type ZombieVariant = 'zombie' | 'urban' | 'disgusting' | 'zanter';
+
+export interface ZombieVariantDef {
+  base: 'zombie' | 'urban'; // which sprite pack + body size to use
+  hp: number;
+  tint?: number;
+  scale: number;
+  patrolSpeed: number;
+  chaseSpeed: number;
+  contactDamage: number;
+}
 
 export const PLAYER = {
   accel: 2200,
@@ -43,8 +53,6 @@ export const COMBAT = {
 };
 
 export const ZOMBIE = {
-  patrolSpeed: 55,
-  chaseSpeed: 95,
   aggroRange: 240,
   deaggroRange: 330,
   lungeRange: 80,
@@ -53,12 +61,16 @@ export const ZOMBIE = {
   lungeMs: 350,
   lungeRecoverMs: 450,
   lungeCooldownMs: 1900,
-  contactDamage: 8,
   contactCooldownMs: 1000,
   jumpFailIntervalMs: 1600,
   heartDropChance: 0.2,
   coinValue: 5,
-  hp: { zombie: 30, urban: 50 },
+  variants: {
+    zombie:     { base: 'zombie', hp: 30, scale: 1,    patrolSpeed: 55, chaseSpeed: 95,  contactDamage: 8 },
+    urban:      { base: 'urban',  hp: 50, scale: 1,    patrolSpeed: 55, chaseSpeed: 95,  contactDamage: 8 },
+    disgusting: { base: 'zombie', hp: 45, tint: 0x7fd16a, scale: 1.06, patrolSpeed: 65, chaseSpeed: 118, contactDamage: 10 },
+    zanter:     { base: 'urban',  hp: 95, tint: 0xcdb892, scale: 1.45, patrolSpeed: 40, chaseSpeed: 72,  contactDamage: 14 },
+  } satisfies Record<ZombieVariant, ZombieVariantDef>,
 };
 
 export const BOSS = {

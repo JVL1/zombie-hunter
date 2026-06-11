@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { ZombieAnims, ZombieAnimSet } from '../assets';
-import { ZOMBIE, ZombieVariant } from '../config';
+import { ZOMBIE, ZombieVariant, ZombieVariantDef } from '../config';
 import { SynthAudio } from '../core/SynthAudio';
 import { dustPuff, flashSprite, floatText, knockback, lit } from '../fx/Effects';
 
@@ -22,6 +22,7 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
   maxHealth: number;
   private anims_: ZombieAnimSet;
   private variant: ZombieVariant;
+  private vdef: ZombieVariantDef;
   private target: Phaser.Physics.Arcade.Sprite | null = null;
   private state_ = ZombieState.PATROL;
   private stateUntil = 0;
@@ -35,25 +36,29 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
   private healthBarBg: Phaser.GameObjects.Rectangle | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, variant: ZombieVariant = 'zombie') {
-    super(scene, x, y, variant === 'urban' ? 'urban-idle-sheet' : 'zombie-idle-sheet', 0);
+    const v: ZombieVariantDef = ZOMBIE.variants[variant];
+    super(scene, x, y, v.base === 'urban' ? 'urban-idle-sheet' : 'zombie-idle-sheet', 0);
     this.variant = variant;
-    this.anims_ = ZombieAnims[variant];
+    this.vdef = v;
+    this.anims_ = ZombieAnims[v.base];
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
     lit(this);
 
-    this.maxHealth = variant === 'urban' ? ZOMBIE.hp.urban : ZOMBIE.hp.zombie;
+    this.maxHealth = v.hp;
     this.health = this.maxHealth;
 
     this.setCollideWorldBounds(true);
-    if (variant === 'urban') {
+    if (v.base === 'urban') {
       this.body!.setSize(40, 80);
       this.body!.setOffset(44, 48);
     } else {
       this.body!.setSize(32, 64);
       this.body!.setOffset(32, 32);
     }
+    this.setScale(v.scale);
+    if (v.tint !== undefined) this.setTint(v.tint);
 
     this.play(this.anims_.idle);
     this.nextGroanAt = scene.time.now + 2000 + Math.random() * 4000;
@@ -64,7 +69,7 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
   }
 
   getDamage(): number {
-    return ZOMBIE.contactDamage;
+    return this.vdef.contactDamage;
   }
 
   get isLunging(): boolean {
@@ -74,7 +79,7 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
   takeDamage(amount: number) {
     if (this.dying) return;
     this.health -= amount;
-    flashSprite(this, 0xffffff);
+    flashSprite(this, 0xffffff, undefined, this.vdef.tint);
     floatText(this.scene, this.x, this.y - 40, `${amount}`, '#ffdd55');
     if (this.body) {
       knockback(this.body as Phaser.Physics.Arcade.Body, this.target?.x ?? this.x - 1, 160);
@@ -124,7 +129,9 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
     if (this.target && time > this.nextGroanAt) {
       const dist = Phaser.Math.Distance.BetweenPoints(this, this.target);
       if (dist < 320) {
-        SynthAudio.groan(this.variant === 'urban' ? 0.8 : 1 + Math.random() * 0.3);
+        SynthAudio.groan(
+          this.variant === 'zanter' ? 0.6 : this.vdef.base === 'urban' ? 0.8 : 1 + Math.random() * 0.3
+        );
       }
       this.nextGroanAt = time + 3000 + Math.random() * 4000;
     }
@@ -192,18 +199,18 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
       this.nextLungeAt = time + ZOMBIE.lungeCooldownMs;
       this.setVelocityX(0);
       this.setFlipX(this.target.x < this.x);
-      flashSprite(this, 0xff8866, ZOMBIE.lungeWindupMs - 60);
+      flashSprite(this, 0xff8866, ZOMBIE.lungeWindupMs - 60, this.vdef.tint);
       this.scene.tweens.add({
         targets: this,
-        scaleY: 0.92,
-        scaleX: 1.06,
+        scaleY: this.vdef.scale * 0.92,
+        scaleX: this.vdef.scale * 1.06,
         duration: ZOMBIE.lungeWindupMs - 60,
         yoyo: true,
-        onComplete: () => this.setScale(1),
+        onComplete: () => this.setScale(this.vdef.scale),
       });
     } else {
       const dir = this.target.x < this.x ? -1 : 1;
-      this.setVelocityX(dir * ZOMBIE.chaseSpeed);
+      this.setVelocityX(dir * this.vdef.chaseSpeed);
       this.setFlipX(dir < 0);
       this.updateWalkAnim(body);
     }
@@ -234,14 +241,15 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
       this.patrolDirection *= -1;
       this.patrolTimer = 0;
     }
-    this.setVelocityX(this.patrolDirection * ZOMBIE.patrolSpeed);
+    this.setVelocityX(this.patrolDirection * this.vdef.patrolSpeed);
     this.setFlipX(this.patrolDirection < 0);
   }
 
   private updateHealthBar() {
     if (!this.healthBar) {
-      this.healthBarBg = this.scene.add.rectangle(this.x, this.y - 46, 30, 4, 0x111111).setDepth(15);
-      this.healthBar = this.scene.add.rectangle(this.x, this.y - 46, 28, 2, 0x44dd44).setDepth(16);
+      const barY = this.y - 46 * this.vdef.scale;
+      this.healthBarBg = this.scene.add.rectangle(this.x, barY, 30, 4, 0x111111).setDepth(15);
+      this.healthBar = this.scene.add.rectangle(this.x, barY, 28, 2, 0x44dd44).setDepth(16);
     }
     const pct = Math.max(0, this.health / this.maxHealth);
     this.healthBar.width = 28 * pct;
@@ -249,8 +257,9 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
   }
 
   private positionHealthBar() {
-    this.healthBarBg?.setPosition(this.x, this.y - 46);
-    this.healthBar?.setPosition(this.x - (28 - this.healthBar.width) / 2, this.y - 46);
+    const barY = this.y - 46 * this.vdef.scale;
+    this.healthBarBg?.setPosition(this.x, barY);
+    this.healthBar?.setPosition(this.x - (28 - this.healthBar.width) / 2, barY);
   }
 
   private destroyHealthBar() {
