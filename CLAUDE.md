@@ -16,35 +16,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev       # Start Vite dev server (hot reload)
 npm run build     # Production build to dist/
 npm run preview   # Preview production build
+npm test          # Vitest unit tests (pure-logic modules only)
+npx tsc --noEmit  # Typecheck
 ```
 
-No tests or linting configured yet.
+## Architecture (v2 rebuild, 2026-06-10)
 
-## Architecture
+Rebuild design doc: `docs/plans/2026-06-10-rebuild-v2-design.md`. 960×540 (16:9), Phaser 3.90 + TypeScript + Vite. WebGL with Light2D dynamic lighting + PostFX (vignette/bloom); degrades gracefully to canvas (guard with `scene.sys.renderer.type === Phaser.WEBGL`).
 
 ### Scene Flow
 ```
-PreloadScene → MainMenuScene → Level1Scene (+ HUD overlay) → Victory/GameOver → MainMenu
+PreloadScene → MainMenuScene → Level1Scene (+ HUD overlay) → Victory/GameOver → MainMenu/retry
 ```
 
-Phaser scenes are the top-level game screens. Each has `create()` (setup) and `update()` (every frame). HUDScene runs in parallel as an overlay via `scene.launch('HUD')`.
+### Layout
 
-### Three-Layer Organization
-
-- **`src/scenes/`** — Game screens. Each scene manages game objects, physics colliders, and event wiring. Level scenes spawn entities and connect them.
-- **`src/entities/`** — Game objects with behavior (Player, Zombie, Boss). Extend `Phaser.Physics.Arcade.Sprite`. Each has its own `update()` called by the parent scene.
-- **`src/systems/`** — Shared logic:
-  - `GameState` — Singleton (`GameState.getInstance()`) holding health, coins, keys, sword stats. Persists across scenes.
-  - `Combat` — `Damageable` interface, `flashSprite()`, `knockback()` utilities.
-  - `Splatter` — Particle burst effects (blood, skin, brain) on hit/kill.
-  - `SoundManager` — Gracefully plays audio if loaded, silently skips if not.
+- **`src/config.ts`** — every gameplay tunable (player physics, combat, zombie/boss AI). Tune here, not in entity code.
+- **`src/core/`** — `InputController` (keyboard+gamepad, edge detection, jump buffering), `Juice` (hit-stop, shake, zoom punch, slow-mo), `SynthAudio` (ALL audio is WebAudio-synthesized — no audio files; call `unlock()` from a user gesture first), `GameState` (singleton; coins/keys/bestStreak persist via localStorage).
+- **`src/fx/`** — `Effects` (flashSprite, knockback, afterimage, shockwave, floatText, `lit()` Light2D helper), `Splatter` (GoreSystem: particle bursts + persistent blood decals on a world-sized RenderTexture).
+- **`src/entities/`** — `Player` (coyote time, jump buffer, double jump, dash with i-frames, 3-hit combo, air slam with pogo), `Zombie` (patrol/chase/telegraphed-lunge state machine + jump-fail comedy), `Boss` (SITTING→RISING→FIGHTING→CHARGE/LEAP→DEAD, enrages at 50% HP), `Pickups` (coin/heart/key, coins magnet to player).
+- **`src/scenes/`** — `PreloadScene` generates ALL non-sprite textures procedurally (sky, tiles, throne of cars, particles, decals) and pre-bakes night tints onto the pale parallax layers (canvas-renderer-safe).
 
 ### Key Patterns
 
-- **Sword combat**: Player emits `'player-attack'` event with a temporary hitbox rectangle. The level scene listens and checks overlaps with enemies.
-- **Contact damage**: `physics.add.overlap()` with a cooldown Map to prevent instant death.
-- **Boss encounters**: State machine (`BossState` enum: SITTING → RISING → FIGHTING → DEAD) with tweens for the throne-rise cinematic.
-- **Placeholder assets**: Generated as colored shapes in PreloadScene via `graphics.generateTexture()`. Real pixel art will replace these — see `docs/plans/2026-02-22-asset-acquisition-plan.md`.
+- **Sword combat**: Player emits `'player-attack'` / `'player-slam'` scene events with a hitbox + damage payload. Level scene wires overlaps; per-swing `hitSet` prevents multi-hits; colliders destroyed with the hitbox.
+- **Scene event listeners**: Level1Scene.create() calls `this.events.off(...)` for its custom events FIRST — scene restarts reuse the same EventEmitter and listeners stack otherwise.
+- **Contact damage**: overlap + cooldown Map; player has post-hit i-frames and dash i-frames.
+- **Boss cinematic**: letterbox bars + camera pan + world/camera bounds locked to the arena; surviving zombies destroyed before bounds shrink.
+- **Testing hook**: `window.game` is exposed; playtest by dispatching synthetic KeyboardEvents and inspecting scene objects via `agent-browser eval`.
+
+### Controls
+
+Arrows move, ↑/Space/W jump (double jump), A/J attack (3-hit combo; in air while falling = slam), Shift dash, gamepad fully supported (stick/d-pad, A jump, X/B attack, R1/L1 dash). P toggles physics debug.
 
 ### Adding a New Level
 
@@ -55,26 +58,24 @@ Phaser scenes are the top-level game screens. Each has `create()` (setup) and `u
 
 ## Game Design
 
-Full design doc: `docs/plans/2026-02-22-zombie-hunters-design.md`
-Implementation plan: `docs/plans/2026-02-22-zombie-hunters-level1-plan.md`
+Original design doc: `docs/plans/2026-02-22-zombie-hunters-design.md` (story/levels/bosses still canonical)
+v2 rebuild: `docs/plans/2026-06-10-rebuild-v2-design.md`
 
 ## Implementation Status
 
-- Level 1 (Abandoned City) is fully playable with placeholder art
-- Player movement, jumping, sword combat
-- 8 zombies with patrol/chase AI
-- Blood/skin/brain splatter particle effects
-- HUD with health bar, coin counter, 5 key slots
-- Boss throne encounter with cinematic rise
-- Victory and Game Over screens with retry
-- Sound hooks wired up (no audio files yet)
+- Level 1 (Abandoned City) fully playable end-to-end: 8 zombies, stepping stones, fire barrels, rain/lightning, boss with enrage phase, key #1, Victory/GameOver
+- Advanced graphics: dynamic lighting, postFX, persistent gore decals, parallax night city, hit-stop/screen-shake juice
+- Synthesized SFX + ambient music (no audio files)
+- Verified by automated browser playtest (full level + boss kill + both end screens)
 
-**Next milestones:** Integrate real pixel art assets, add shops between levels, build Level 2
+**Next milestones:** difficulty tuning with Henry, shops between levels, Level 2 (Broken Down Forest)
 
 ## Gotchas
 
 - Physics world bounds and camera bounds are set separately — both need configuring per level
-- Boss arena locks world bounds to a 600px region — remember to restore when adding post-boss content
-- `createCursorKeys()` for arrows, `addKey()` for individual keys (A = attack, D = debug toggle)
-- Sprite `.setDepth()` controls render order (boss in front of throne)
-- HUD uses `setScrollFactor(0)` to stay fixed on screen
+- Boss arena locks world bounds to x≥2600 — restore if adding post-boss content
+- TileSprite `setTint` is WebGL-only — bake tints into textures (see `PreloadScene.bakeTint`) for canvas compatibility
+- Stepping stones/platforms near the ground need >56px clearance underneath or the player (48px body) wedges against them
+- The first zombie must spawn outside aggro+patrol reach of x=100 or it kills idle players at spawn
+- A pre-commit hook requires tests written + run in the session before `git commit`
+- Old v1 code: `.pre-rebuild-backup/` and git history before the v2 rebuild commit

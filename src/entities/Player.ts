@@ -1,169 +1,374 @@
 import Phaser from 'phaser';
 import { Assets, PlayerAnims } from '../assets';
-import { flashSprite } from '../systems/Combat';
-import { GameState } from '../systems/GameState';
+import { COMBAT, PLAYER } from '../config';
+import { GameState } from '../core/GameState';
+import { InputController } from '../core/InputController';
+import { SynthAudio } from '../core/SynthAudio';
+import { afterimage, dustPuff, flashSprite, lit } from '../fx/Effects';
 
+export interface AttackEvent {
+  hitbox: Phaser.GameObjects.Rectangle;
+  damage: number;
+  comboStep: number;
+  isFinisher: boolean;
+}
+
+export interface SlamEvent {
+  hitbox: Phaser.GameObjects.Rectangle;
+  damage: number;
+}
+
+// The zombie hunter. Modern platformer feel: coyote time, jump buffer,
+// variable jump height, double jump, dash with i-frames, 3-hit sword combo,
+// air slam with pogo bounce.
 export class Player extends Phaser.Physics.Arcade.Sprite {
-  private cursors: Phaser.Types.Input.Keyboard.CursorKeys;
-  private moveSpeed = 200;
-  private jumpForce = -450;
-  private attackKey: Phaser.Input.Keyboard.Key;
-  private isAttacking = false;
+  private controls: InputController;
   private gameState = GameState.getInstance();
-  private attackCooldown = 300; // ms
-  private lastAttackTime = 0;
-  private isSlamming = false;
   private swordOverlay: Phaser.GameObjects.Sprite;
+  private lamp: Phaser.GameObjects.Light | null = null;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  // Jump state
+  private lastGroundedAt = -Infinity;
+  private jumpsLeft = PLAYER.maxJumps;
+  private wasGrounded = false;
+
+  // Dash state
+  private dashing = false;
+  private dashReadyAt = 0;
+  private dashTrailEvent: Phaser.Time.TimerEvent | null = null;
+
+  // Attack state
+  private attacking = false;
+  private comboStep = 0;
+  private comboWindowUntil = 0;
+  private attackReadyAt = 0;
+  private slamHitbox: Phaser.GameObjects.Rectangle | null = null;
+
+  // Damage state
+  private invulnUntil = 0;
+  private dying = false;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, input: InputController) {
     super(scene, x, y, Assets.PLAYER_SHEET, 0);
+    this.controls = input;
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
+    lit(this);
 
     this.setCollideWorldBounds(true);
-    this.setBounce(0.1);
-
-    // Adjust physics body to match character (sprite is 80x64 but character is smaller)
     this.body!.setSize(24, 48);
     this.body!.setOffset(28, 16);
+    this.setDragX(PLAYER.drag);
+    this.setMaxVelocity(PLAYER.maxRun, 900);
 
-    // Sword overlay — same frame layout, rendered on top of player
     this.swordOverlay = scene.add.sprite(x, y, Assets.PLAYER_SWORD, 0);
-    this.swordOverlay.setDepth(this.depth + 1);
+    lit(this.swordOverlay);
 
-    this.cursors = scene.input.keyboard!.createCursorKeys();
-    this.attackKey = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A);
-
-    // Sprite faces left by default, flip to face right initially
+    // Sprite art faces left by default; flipX=true means facing right
     this.setFlipX(true);
     this.swordOverlay.setFlipX(true);
-
     this.play(PlayerAnims.IDLE.key);
+
+    if (scene.sys.renderer.type === Phaser.WEBGL) {
+      this.lamp = scene.lights.addLight(x, y, 240, 0xffd9a0, 1.1);
+    }
+  }
+
+  get facing(): number {
+    return this.flipX ? 1 : -1;
+  }
+
+  get isDying(): boolean {
+    return this.dying;
+  }
+
+  get isInvulnerable(): boolean {
+    return this.dashing || this.scene.time.now < this.invulnUntil;
+  }
+
+  get isSlamming(): boolean {
+    return this.slamHitbox !== null;
+  }
+
+  override setDepth(value: number): this {
+    super.setDepth(value);
+    if (this.swordOverlay) this.swordOverlay.setDepth(value + 1);
+    return this;
   }
 
   update() {
-    // Horizontal movement
-    // Sprite faces left by default, so flipX=true means facing right
-    if (this.cursors.left.isDown) {
-      this.setVelocityX(-this.moveSpeed);
-      this.setFlipX(false); // face left (default direction)
-    } else if (this.cursors.right.isDown) {
-      this.setVelocityX(this.moveSpeed);
-      this.setFlipX(true); // flip to face right
-    } else {
-      this.setVelocityX(0);
+    if (!this.body || this.dying) return;
+    const now = this.scene.time.now;
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    const grounded = body.blocked.down;
+
+    // --- Landing ---
+    if (grounded && !this.wasGrounded) {
+      if (body.deltaYFinal() >= 0) {
+        dustPuff(this.scene, this.x, this.y + 24, 5);
+        SynthAudio.land();
+      }
+      if (this.slamHitbox) this.landSlam();
+    }
+    this.wasGrounded = grounded;
+
+    if (grounded) {
+      this.lastGroundedAt = now;
+      this.jumpsLeft = PLAYER.maxJumps;
     }
 
-    // Jump — only when touching ground
-    if (this.cursors.up.isDown && this.body!.blocked.down) {
-      this.setVelocityY(this.jumpForce);
+    // --- Dash ---
+    if (this.controls.dashJustPressed && !this.dashing && now >= this.dashReadyAt && !this.slamHitbox) {
+      this.startDash();
     }
 
-    // Attack
-    if (this.attackKey.isDown) {
-      this.attack();
+    if (!this.dashing) {
+      // --- Horizontal movement ---
+      if (this.controls.left) {
+        this.setAccelerationX(-PLAYER.accel);
+        this.setFlipX(false);
+      } else if (this.controls.right) {
+        this.setAccelerationX(PLAYER.accel);
+        this.setFlipX(true);
+      } else {
+        this.setAccelerationX(0);
+      }
+
+      // --- Jump (buffered + coyote + double) ---
+      const canCoyote = now - this.lastGroundedAt <= PLAYER.coyoteMs;
+      if (this.controls.jumpJustPressed || grounded) {
+        if (this.controls.consumeBufferedJump()) {
+          if (grounded || canCoyote) {
+            this.doJump(false);
+          } else if (this.jumpsLeft > 0 && this.jumpsLeft < PLAYER.maxJumps) {
+            this.doJump(true);
+          } else if (this.jumpsLeft === PLAYER.maxJumps) {
+            // Was airborne without jumping (walked off ledge, past coyote)
+            this.jumpsLeft = PLAYER.maxJumps - 1;
+            this.doJump(true);
+          }
+        }
+      }
+
+      // Variable jump height: release early to cut the jump short
+      if (!this.controls.jumpHeld && body.velocity.y < PLAYER.jumpCutVelocity) {
+        this.setVelocityY(PLAYER.jumpCutVelocity);
+      }
     }
 
-    // Animation state (attack animation takes priority)
-    if (!this.isAttacking) {
-      this.updateAnimation();
+    // --- Attack ---
+    if (this.controls.attackJustPressed) {
+      this.tryAttack();
     }
 
-    // Sync sword overlay with player position, frame, and flip
+    // --- Slam fast-fall ---
+    if (this.slamHitbox) {
+      this.setVelocityY(Math.max(body.velocity.y, PLAYER.slamFallSpeed));
+      this.slamHitbox.setPosition(this.x, this.y + 38);
+    }
+
+    // --- Animation ---
+    if (!this.attacking) {
+      this.updateAnimation(grounded, body);
+    }
+
+    // --- Sync sword overlay + lamp ---
     this.swordOverlay.setPosition(this.x, this.y);
     this.swordOverlay.setFlipX(this.flipX);
     this.swordOverlay.setFrame(this.frame.name);
+    this.swordOverlay.setAlpha(this.alpha);
+    if (this.lamp) {
+      this.lamp.setPosition(this.x, this.y - 10);
+    }
   }
 
-  private updateAnimation() {
-    if (!this.body!.blocked.down) {
-      if (this.body!.velocity.y < 0) {
-        this.play(PlayerAnims.JUMP.key, true);
-      } else {
-        this.play(PlayerAnims.FALL.key, true);
-      }
-    } else if (Math.abs(this.body!.velocity.x) > 0) {
+  private updateAnimation(grounded: boolean, body: Phaser.Physics.Arcade.Body) {
+    if (!grounded) {
+      this.play(body.velocity.y < 0 ? PlayerAnims.JUMP.key : PlayerAnims.FALL.key, true);
+    } else if (Math.abs(body.velocity.x) > 150) {
+      this.play(PlayerAnims.RUN.key, true);
+    } else if (Math.abs(body.velocity.x) > 10) {
       this.play(PlayerAnims.WALK.key, true);
     } else {
       this.play(PlayerAnims.IDLE.key, true);
     }
   }
 
-  attack(): Phaser.GameObjects.Rectangle | null {
-    const now = this.scene.time.now;
-    if (this.isAttacking || now - this.lastAttackTime < this.attackCooldown) {
-      return null;
+  private doJump(isDouble: boolean) {
+    this.setVelocityY(PLAYER.jumpVelocity);
+    this.jumpsLeft--;
+    if (isDouble) {
+      SynthAudio.doubleJump();
+      dustPuff(this.scene, this.x, this.y + 16, 4);
+    } else {
+      SynthAudio.jump();
     }
+  }
 
-    this.isAttacking = true;
-    this.lastAttackTime = now;
+  private startDash() {
+    this.dashing = true;
+    this.dashReadyAt = this.scene.time.now + PLAYER.dashCooldownMs;
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    body.setAllowGravity(false);
+    this.setAccelerationX(0);
+    this.setDragX(0); // constant speed for the whole dash
+    this.setMaxVelocity(PLAYER.dashSpeed, 900);
+    this.setVelocity(this.facing * PLAYER.dashSpeed, 0);
+    SynthAudio.dash();
 
-    // Detect air slam: airborne and falling
-    const isAirborne = !this.body!.blocked.down;
-    const isFalling = this.body!.velocity.y > 0;
-
-    if (isAirborne && isFalling) {
-      // --- DOWNWARD SWORD SLAM ---
-      this.isSlamming = true;
-
-      this.play(PlayerAnims.ATTACK.key, true);
-      this.once('animationcomplete-' + PlayerAnims.ATTACK.key, () => {
-        this.isAttacking = false;
-        this.isSlamming = false;
-      });
-
-      // Hitbox BELOW the player (32 wide, 40 tall)
-      const hitbox = this.scene.add.rectangle(this.x, this.y + 40, 32, 40, 0xffffff, 0.3);
-      this.scene.physics.add.existing(hitbox, false);
-      (hitbox.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
-
-      this.scene.events.emit('player-slam', hitbox);
-
-      this.scene.time.delayedCall(150, () => {
-        hitbox.destroy();
-      });
-
-      return hitbox;
-    }
-
-    // --- REGULAR GROUND/AIR SWING ---
-    this.play(PlayerAnims.ATTACK.key, true);
-    this.once('animationcomplete-' + PlayerAnims.ATTACK.key, () => {
-      this.isAttacking = false;
+    this.dashTrailEvent = this.scene.time.addEvent({
+      delay: 30,
+      repeat: Math.floor(PLAYER.dashMs / 30),
+      callback: () => afterimage(this.scene, this),
     });
 
-    // Hitbox in front of player (flipX=true means facing right)
-    const offsetX = this.flipX ? 30 : -30;
-    const hitbox = this.scene.add.rectangle(this.x + offsetX, this.y, 40, 32, 0xffffff, 0.3);
+    this.scene.time.delayedCall(PLAYER.dashMs, () => {
+      if (!this.body) return;
+      this.dashing = false;
+      body.setAllowGravity(true);
+      this.setDragX(PLAYER.drag);
+      this.setMaxVelocity(PLAYER.maxRun, 900);
+      this.dashTrailEvent?.remove();
+      this.dashTrailEvent = null;
+    });
+  }
+
+  private tryAttack() {
+    const now = this.scene.time.now;
+    if (this.attacking || now < this.attackReadyAt || this.dying) return;
+
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    const airborne = !body.blocked.down;
+    const falling = body.velocity.y > -50;
+
+    if (airborne && falling && !this.slamHitbox) {
+      this.startSlam();
+      return;
+    }
+    if (this.slamHitbox) return;
+
+    // 3-hit combo: step advances if within the combo window
+    this.comboStep = now <= this.comboWindowUntil ? (this.comboStep % 3) + 1 : 1;
+    const isFinisher = this.comboStep === 3;
+    const damage = Math.floor(
+      this.gameState.swordDamage * COMBAT.comboMultipliers[this.comboStep - 1]
+    );
+
+    this.attacking = true;
+    SynthAudio.swing(this.comboStep);
+    this.play(PlayerAnims.ATTACK.key, true);
+    this.once(`animationcomplete-${PlayerAnims.ATTACK.key}`, () => {
+      this.attacking = false;
+      this.comboWindowUntil =
+        this.scene.time.now + COMBAT.comboWindowMs;
+      this.attackReadyAt =
+        this.scene.time.now + (isFinisher ? COMBAT.finisherCooldownMs : COMBAT.swingCooldownMs);
+      if (isFinisher) this.comboStep = 0;
+    });
+
+    const reach = COMBAT.hitboxW + (isFinisher ? COMBAT.finisherReachBonus : 0);
+    const offsetX = this.facing * (18 + reach / 2);
+    const hitbox = this.scene.add.rectangle(this.x + offsetX, this.y, reach, COMBAT.hitboxH);
+    hitbox.setVisible(false);
     this.scene.physics.add.existing(hitbox, false);
     (hitbox.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+    hitbox.setData('hitSet', new Set());
 
-    this.scene.events.emit('player-attack', hitbox);
+    const event: AttackEvent = { hitbox, damage, comboStep: this.comboStep, isFinisher };
+    this.scene.events.emit('player-attack', event);
 
-    this.scene.time.delayedCall(100, () => {
-      hitbox.destroy();
+    this.scene.time.delayedCall(140, () => {
+      if (hitbox.active) hitbox.destroy();
+    });
+  }
+
+  private startSlam() {
+    this.attacking = true;
+    SynthAudio.swing(2);
+    this.play(PlayerAnims.ATTACK.key, true);
+    this.once(`animationcomplete-${PlayerAnims.ATTACK.key}`, () => {
+      this.attacking = false;
     });
 
-    return hitbox;
+    const damage = Math.floor(this.gameState.swordDamage * COMBAT.slamDamageMultiplier);
+    const hitbox = this.scene.add.rectangle(this.x, this.y + 38, 36, 44);
+    hitbox.setVisible(false);
+    this.scene.physics.add.existing(hitbox, false);
+    (hitbox.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+    hitbox.setData('hitSet', new Set());
+    this.slamHitbox = hitbox;
+
+    const event: SlamEvent = { hitbox, damage };
+    this.scene.events.emit('player-slam', event);
+
+    // Safety: end the slam even if we never land (shouldn't happen)
+    this.scene.time.delayedCall(1500, () => {
+      if (this.slamHitbox === hitbox) this.endSlam();
+    });
   }
 
-  getIsSlamming(): boolean {
-    return this.isSlamming;
+  private landSlam() {
+    this.scene.events.emit('player-slam-land', { x: this.x, y: this.y + 24 });
+    this.endSlam();
   }
 
+  private endSlam() {
+    if (this.slamHitbox) {
+      this.slamHitbox.destroy();
+      this.slamHitbox = null;
+    }
+  }
+
+  // Bounce off an enemy hit by the slam — refunds the double jump for chaining.
   pogoBounce() {
-    this.setVelocityY(-250);
+    this.setVelocityY(PLAYER.slamPogoVelocity);
+    this.jumpsLeft = Math.max(this.jumpsLeft, 1);
+    this.endSlam();
   }
 
-  takeDamage(amount: number) {
+  takeDamage(amount: number, fromX: number) {
+    if (this.dying || this.isInvulnerable) return;
     this.gameState.health -= amount;
-    flashSprite(this.scene, this);
+    this.invulnUntil = this.scene.time.now + PLAYER.hurtInvulnMs;
+    SynthAudio.hurt();
+    flashSprite(this, 0xff4444);
+
+    const dir = this.x < fromX ? -1 : 1;
+    this.setVelocity(dir * PLAYER.contactKnockback, -180);
+
+    // Invulnerability blink
+    this.scene.tweens.add({
+      targets: this,
+      alpha: 0.3,
+      duration: 90,
+      yoyo: true,
+      repeat: Math.floor(PLAYER.hurtInvulnMs / 180),
+      onComplete: () => this.setAlpha(1),
+    });
 
     if (this.gameState.health <= 0) {
       this.gameState.health = 0;
-      this.play(PlayerAnims.DEATH.key);
-      this.scene.events.emit('player-died');
+      this.die();
     }
+  }
+
+  private die() {
+    this.dying = true;
+    this.endSlam();
+    this.dashTrailEvent?.remove();
+    this.setAccelerationX(0);
+    this.setVelocityX(0);
+    this.setAlpha(1);
+    this.play(PlayerAnims.DEATH.key, true);
+    this.once(`animationcomplete-${PlayerAnims.DEATH.key}`, () => {
+      this.scene.events.emit('player-died');
+    });
+  }
+
+  override destroy(fromScene?: boolean) {
+    this.swordOverlay?.destroy();
+    if (this.lamp && this.scene) this.scene.lights.removeLight(this.lamp);
+    super.destroy(fromScene);
   }
 }

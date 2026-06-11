@@ -1,54 +1,67 @@
 import Phaser from 'phaser';
-import { Assets } from '../assets';
-import { Damageable, flashSprite, knockback } from '../systems/Combat';
+import { Assets, ZombieAnims } from '../assets';
+import { BOSS } from '../config';
+import { Juice } from '../core/Juice';
+import { SynthAudio } from '../core/SynthAudio';
+import { dustPuff, flashSprite, knockback, lit, shockwave } from '../fx/Effects';
 
 export enum BossState {
   SITTING,
   RISING,
   FIGHTING,
+  CHARGE_WINDUP,
+  CHARGING,
+  STUNNED,
+  LEAPING,
   DEAD,
 }
 
-export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
+// The Mutated Zombie — Level 1 boss on a throne of crushed cars.
+// Walks you down, telegraphs charges, and at half health it ENRAGES:
+// red glow, faster, and starts leaping into ground slams with shockwaves.
+export class Boss extends Phaser.Physics.Arcade.Sprite {
   health: number;
   maxHealth: number;
-  private damage = 20;
-  private speed = 100;
-  private bossState = BossState.SITTING;
-  private target: Phaser.Physics.Arcade.Sprite | null = null;
-  private throne: Phaser.GameObjects.Rectangle;
-  private attackTimer = 0;
-  private chargeSpeed = 300;
+  enraged = false;
 
-  constructor(
-    scene: Phaser.Scene,
-    x: number,
-    y: number,
-    health: number = 150
-  ) {
-    super(scene, x, y, Assets.URBAN_ZOMBIE_IDLE, 0);
+  private bossState = BossState.SITTING;
+  private stateUntil = 0;
+  private attackTimer = 0;
+  private target: Phaser.Physics.Arcade.Sprite | null = null;
+  private throne: Phaser.GameObjects.Image;
+  private throneLight: Phaser.GameObjects.Light | null = null;
+  private juice: Juice;
+  private anims_ = ZombieAnims.urban;
+  private chargeDir = 1;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, juice: Juice) {
+    super(scene, x, y, Assets.URBAN_IDLE, 0);
+    this.juice = juice;
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
+    lit(this);
 
-    this.maxHealth = health;
-    this.health = health;
+    this.maxHealth = BOSS.hp;
+    this.health = BOSS.hp;
 
-    // Boss is larger — scale up the urban zombie sprite
-    this.setScale(1.5);
-
+    this.setScale(1.8);
     this.setCollideWorldBounds(true);
-    this.setBounce(0.1);
+    this.body!.setSize(40, 80);
+    this.body!.setOffset(44, 48);
 
-    // Initially no movement — sitting on throne
     (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
     this.setImmovable(true);
 
-    // Create throne behind boss
-    this.throne = scene.add.rectangle(x, y + 20, 80, 96, 0x8b4513);
-    this.setDepth(1); // Boss renders in front of throne
+    this.throne = scene.add.image(x, y + 8, Assets.THRONE).setDepth(this.depth - 1);
+    lit(this.throne);
+    this.setDepth(6);
 
-    this.play('urban-zombie-idle');
+    if (scene.sys.renderer.type === Phaser.WEBGL) {
+      this.throneLight = scene.lights.addLight(x, y - 30, 260, 0xff3322, 0.9);
+    }
+
+    this.play(this.anims_.idle);
   }
 
   setTarget(target: Phaser.Physics.Arcade.Sprite) {
@@ -60,17 +73,23 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
   }
 
   getDamage(): number {
-    return this.damage;
+    return BOSS.contactDamage;
+  }
+
+  get isVulnerable(): boolean {
+    return this.bossState !== BossState.SITTING && this.bossState !== BossState.RISING;
   }
 
   triggerRise() {
     if (this.bossState !== BossState.SITTING) return;
     this.bossState = BossState.RISING;
+    SynthAudio.roar();
+    this.juice.shake(0.006, 600);
 
     this.scene.tweens.add({
       targets: this,
-      y: this.y - 30,
-      duration: 800,
+      y: this.y - 36,
+      duration: 900,
       ease: 'Power2',
       onComplete: () => {
         this.bossState = BossState.FIGHTING;
@@ -80,17 +99,35 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
     });
   }
 
-  takeDamage(amount: number) {
-    if (this.bossState !== BossState.FIGHTING) return;
+  takeDamage(amount: number): boolean {
+    if (!this.isVulnerable || this.bossState === BossState.DEAD) return false;
 
-    this.health -= amount;
-    flashSprite(this.scene, this);
-    knockback(
-      this.body as Phaser.Physics.Arcade.Body,
-      this.target?.x ?? this.x - 1,
-      100
-    );
-    this.play('urban-zombie-hurt', true);
+    // Bonus damage while stunned from a wall hit
+    const final = this.bossState === BossState.STUNNED ? Math.floor(amount * 1.5) : amount;
+    this.health -= final;
+    flashSprite(this, 0xffffff);
+    if (this.body) {
+      knockback(this.body as Phaser.Physics.Arcade.Body, this.target?.x ?? this.x - 1, 90);
+    }
+
+    if (this.health <= this.maxHealth * BOSS.enrageThreshold && !this.enraged) {
+      this.enrage();
+    }
+    if (this.health <= 0) {
+      this.health = 0;
+      this.bossState = BossState.DEAD;
+      return true;
+    }
+    this.play(this.anims_.hurt, true);
+    return false;
+  }
+
+  private enrage() {
+    this.enraged = true;
+    SynthAudio.roar();
+    this.setTint(0xff6655);
+    this.juice.shake(0.008, 500);
+    this.juice.zoomPunch(0.08, 300);
   }
 
   isDead(): boolean {
@@ -98,36 +135,119 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Damageable {
   }
 
   destroyThrone() {
+    if (this.throneLight) this.scene.lights.removeLight(this.throneLight);
     this.scene.tweens.add({
       targets: this.throne,
       alpha: 0,
-      scaleX: 0.5,
-      scaleY: 0.3,
-      duration: 500,
+      scaleX: 0.6,
+      scaleY: 0.25,
+      y: this.throne.y + 40,
+      duration: 700,
+      ease: 'Quad.easeIn',
       onComplete: () => this.throne.destroy(),
     });
   }
 
   update(time: number, delta: number) {
-    if (this.bossState !== BossState.FIGHTING || !this.target) return;
+    if (!this.target || !this.body || this.bossState === BossState.DEAD) return;
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    const dir = this.target.x < this.x ? -1 : 1;
 
-    this.attackTimer += delta;
+    switch (this.bossState) {
+      case BossState.FIGHTING: {
+        this.attackTimer += delta;
+        this.setFlipX(dir < 0);
+        const walkSpeed = this.enraged ? BOSS.enragedWalkSpeed : BOSS.walkSpeed;
+        this.setVelocityX(dir * walkSpeed);
+        if (this.anims.currentAnim?.key !== this.anims_.hurt || !this.anims.isPlaying) {
+          this.play(this.anims_.walk, true);
+        }
 
-    const direction = this.target.x < this.x ? -1 : 1;
-    this.setFlipX(direction < 0);
-
-    if (this.attackTimer > 2000) {
-      this.setVelocityX(direction * this.chargeSpeed);
-      this.play('urban-zombie-attack', true);
-      if (this.attackTimer > 2500) {
-        this.attackTimer = 0;
+        const interval = this.enraged ? BOSS.enragedAttackIntervalMs : BOSS.attackIntervalMs;
+        if (this.attackTimer > interval && body.blocked.down) {
+          this.attackTimer = 0;
+          // Enraged: mix in leap slams
+          if (this.enraged && Math.random() < 0.45) {
+            this.startLeap(dir);
+          } else {
+            this.startChargeWindup(dir, time);
+          }
+        }
+        break;
       }
-    } else {
-      this.setVelocityX(direction * this.speed);
-      // Only update walk/idle if not playing hurt
-      if (this.anims.currentAnim?.key !== 'urban-zombie-hurt') {
-        this.play('urban-zombie-walk', true);
-      }
+
+      case BossState.CHARGE_WINDUP:
+        this.setVelocityX(0);
+        if (time >= this.stateUntil) {
+          this.bossState = BossState.CHARGING;
+          this.stateUntil = time + BOSS.chargeMs;
+          this.setVelocityX(this.chargeDir * BOSS.chargeSpeed);
+          this.play(this.anims_.attack, true);
+          SynthAudio.groan(0.6);
+        }
+        break;
+
+      case BossState.CHARGING:
+        this.setVelocityX(this.chargeDir * BOSS.chargeSpeed);
+        // Smashed into the arena wall — stunned and takes bonus damage
+        if (body.blocked.left || body.blocked.right) {
+          this.bossState = BossState.STUNNED;
+          this.stateUntil = time + BOSS.wallStunMs;
+          this.setVelocityX(0);
+          this.juice.shake(0.008, 200);
+          SynthAudio.slam();
+          dustPuff(this.scene, this.x + this.chargeDir * 40, this.y, 10);
+        } else if (time >= this.stateUntil) {
+          this.bossState = BossState.FIGHTING;
+        }
+        break;
+
+      case BossState.STUNNED:
+        this.setVelocityX(0);
+        this.setAngle(Math.sin(time / 40) * 4);
+        if (time >= this.stateUntil) {
+          this.setAngle(0);
+          this.bossState = BossState.FIGHTING;
+        }
+        break;
+
+      case BossState.LEAPING:
+        if (body.blocked.down && body.velocity.y >= 0 && time >= this.stateUntil) {
+          // Landed: shockwave
+          this.bossState = BossState.FIGHTING;
+          this.attackTimer = -400;
+          SynthAudio.slam();
+          this.juice.shake(0.01, 250);
+          shockwave(this.scene, this.x, this.y + 60, 3);
+          dustPuff(this.scene, this.x, this.y + 60, 14);
+          this.scene.events.emit('boss-shockwave', { x: this.x, y: this.y + 60 });
+        }
+        break;
+
+      default:
+        break;
     }
+  }
+
+  private startChargeWindup(dir: number, time: number) {
+    this.bossState = BossState.CHARGE_WINDUP;
+    this.chargeDir = dir;
+    this.stateUntil = time + BOSS.chargeWindupMs;
+    this.setVelocityX(0);
+    flashSprite(this, 0xff5533, BOSS.chargeWindupMs - 80);
+    dustPuff(this.scene, this.x - dir * 30, this.y + 50, 6);
+  }
+
+  private startLeap(dir: number) {
+    this.bossState = BossState.LEAPING;
+    this.stateUntil = this.scene.time.now + 300; // min air time before landing counts
+    this.setVelocity(dir * 200, BOSS.jumpSlamVelocity);
+    this.play(this.anims_.attack, true);
+    SynthAudio.groan(0.5);
+  }
+
+  override destroy(fromScene?: boolean) {
+    if (this.throneLight && this.scene) this.scene.lights.removeLight(this.throneLight);
+    super.destroy(fromScene);
   }
 }
