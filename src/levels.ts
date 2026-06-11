@@ -62,7 +62,7 @@ const levelOne: LevelDef = {
   levelNumber: 1,
   name: 'THE ABANDONED CITY',
   victorySubtitle: 'The Abandoned City is yours',
-  nextSceneKey: 'MainMenu', // flipped to 'Level2' once Level 2 is built
+  nextSceneKey: 'Level2',
   keyIndex: 0,
   worldWidth: 3200,
   playerSpawnX: 100,
@@ -114,7 +114,80 @@ const levelOne: LevelDef = {
   arenaLeft: 2600,
 };
 
-export const LEVELS: LevelDef[] = [levelOne];
+const levelTwo: LevelDef = {
+  sceneKey: 'Level2',
+  levelNumber: 2,
+  name: 'THE BROKEN DOWN FOREST',
+  victorySubtitle: 'The forest horde is broken',
+  nextSceneKey: 'MainMenu', // flipped to 'Level3' once Level 3 is built
+  keyIndex: 1,
+  worldWidth: 3400,
+  playerSpawnX: 100,
+  ambientColor: 0x46584a, // mossy night
+  parallax: [
+    { key: Assets.FOREST_NIGHT_FAR, factor: 0.12 },
+    { key: Assets.FOREST_NIGHT_MID, factor: 0.3 },
+    { key: Assets.FOREST_NIGHT_NEAR, factor: 0.55 },
+  ],
+  textures: {
+    groundTop: Assets.FOREST_GROUND_TOP,
+    groundFill: Assets.FOREST_GROUND_FILL,
+    platform: Assets.LOG_PLATFORM,
+    stone: Assets.STUMP_STONE,
+  },
+  platforms: [
+    [350, 395, 4],
+    [800, 320, 5],
+    [1250, 360, 4],
+    [1700, 310, 5],
+    [2150, 395, 4],
+    [2650, 330, 4],
+  ],
+  stairs: [
+    [550, 408, 4, 38, 52],
+    [1450, 410, 4, 40, 50],
+    [2350, 408, 5, 36, 46],
+  ],
+  // Hordes: tight packs of 2-3 with breathing room between packs (14 zombies)
+  zombieSpawns: [
+    { x: 520, variant: 'disgusting' },
+    { x: 565, variant: 'zombie' },
+    { x: 920, variant: 'disgusting' },
+    { x: 960, variant: 'disgusting' },
+    { x: 1005, variant: 'zombie' },
+    { x: 1380, variant: 'disgusting' },
+    { x: 1420, variant: 'zombie' },
+    { x: 1800, variant: 'disgusting' },
+    { x: 1845, variant: 'disgusting' },
+    { x: 1890, variant: 'urban' },
+    { x: 2280, variant: 'disgusting' },
+    { x: 2320, variant: 'disgusting' },
+    { x: 2700, variant: 'urban' },
+    { x: 2745, variant: 'disgusting' },
+  ],
+  // The horde boss IS the pack: the Pack King charges like a brute and keeps
+  // summoning disgusting zombies to swarm you — more and faster when enraged.
+  boss: {
+    name: 'ZOMBIE PACK KING',
+    hp: 300,
+    scale: 1.7,
+    tint: 0x9fd486,
+    walkSpeed: 95,
+    enragedWalkSpeed: 140,
+    contactDamage: 18,
+    attackIntervalMs: 2400,
+    enragedAttackIntervalMs: 1600,
+    throneTexture: Assets.THRONE_TREE,
+    canCharge: true,
+    canLeap: false,
+    summon: { variant: 'disgusting', count: 2, enragedCount: 3, maxAlive: 4, intervalMs: 7000 },
+  },
+  bossSpawnX: 3150,
+  triggerX: 2900,
+  arenaLeft: 2790,
+};
+
+export const LEVELS: LevelDef[] = [levelOne, levelTwo];
 
 export function levelByNumber(n: number): LevelDef {
   if (!Number.isFinite(n)) n = 1;

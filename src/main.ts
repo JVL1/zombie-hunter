@@ -3,6 +3,7 @@ import { GAME_H, GAME_W } from './config';
 import { GameOverScene } from './scenes/GameOverScene';
 import { HUDScene } from './scenes/HUDScene';
 import { Level1Scene } from './scenes/Level1Scene';
+import { Level2Scene } from './scenes/Level2Scene';
 import { MainMenuScene } from './scenes/MainMenuScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { VictoryScene } from './scenes/VictoryScene';
@@ -28,7 +29,7 @@ const config: Phaser.Types.Core.GameConfig = {
   input: {
     gamepad: true,
   },
-  scene: [PreloadScene, MainMenuScene, Level1Scene, HUDScene, VictoryScene, GameOverScene],
+  scene: [PreloadScene, MainMenuScene, Level1Scene, Level2Scene, HUDScene, VictoryScene, GameOverScene],
 };
 
 const game = new Phaser.Game(config);
