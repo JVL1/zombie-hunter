@@ -108,17 +108,16 @@ describe('level progression', () => {
     expect(gs.currentLevelDef.levelNumber).toBe(gs.currentLevel);
   });
 
-  it('loads legacy saves without currentLevel as level 1', () => {
+  it('loads keyless legacy saves as level 1 with coins intact', () => {
     // Real v2-release saves (Henry's machine) predate currentLevel
     localStorage.setItem(
       SAVE_KEY,
-      JSON.stringify({ coins: 10, keys: [true, false, false, false, false], bestStreak: 3 })
+      JSON.stringify({ coins: 10, keys: [false, false, false, false, false], bestStreak: 3 })
     );
     const fresh = new (GameState as any)();
     fresh.load();
     expect(fresh.currentLevel).toBe(1);
     expect(fresh.coins).toBe(10);
-    expect(fresh.keys[0]).toBe(true);
   });
 
   it('clamps corrupt or future currentLevel values on load', () => {
@@ -161,6 +160,35 @@ describe('level progression', () => {
     const fresh = new (GameState as any)();
     fresh.load();
     expect(fresh.maxUnlockedLevel).toBe(fresh.currentLevel);
+  });
+
+  it('legacy saves with earned keys unlock the levels those keys prove', () => {
+    // Henry beat Level 1 on the old build: key #1 saved, no level tracking
+    localStorage.setItem(
+      SAVE_KEY,
+      JSON.stringify({ coins: 25, keys: [true, false, false, false, false], bestStreak: 4 })
+    );
+    const fresh = new (GameState as any)();
+    fresh.load();
+    expect(fresh.currentLevel).toBe(Math.min(2, LEVELS.length));
+    expect(fresh.maxUnlockedLevel).toBe(Math.min(2, LEVELS.length));
+  });
+
+  it('modern saves do not derive currentLevel from keys (replays stay put)', () => {
+    localStorage.setItem(
+      SAVE_KEY,
+      JSON.stringify({
+        coins: 0,
+        keys: [true, false, false, false, false],
+        bestStreak: 0,
+        currentLevel: 1,
+        maxUnlockedLevel: Math.min(2, LEVELS.length),
+      })
+    );
+    const fresh = new (GameState as any)();
+    fresh.load();
+    expect(fresh.currentLevel).toBe(1);
+    expect(fresh.maxUnlockedLevel).toBe(Math.min(2, LEVELS.length));
   });
 });
 

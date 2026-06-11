@@ -151,7 +151,7 @@ const levelTwo: LevelDef = {
   // Hordes: tight packs of 2-3 with breathing room between packs (14 zombies)
   zombieSpawns: [
     { x: 520, variant: 'disgusting' },
-    { x: 565, variant: 'zombie' },
+    { x: 590, variant: 'zombie' }, // clear of the first stair stone (spans x 532-568)
     { x: 920, variant: 'disgusting' },
     { x: 960, variant: 'disgusting' },
     { x: 1005, variant: 'zombie' },

@@ -113,10 +113,21 @@ export class GameState {
       this.currentLevel = Number.isInteger(lvl)
         ? Math.min(Math.max(lvl as number, 1), LEVELS.length)
         : 1;
+      // Keys are earned sequentially, so they prove progress — a save that
+      // predates level tracking but holds key #1 has beaten Level 1
+      const keysUnlock = Math.min(1 + this.keys.filter(Boolean).length, LEVELS.length);
       const maxLvl = (data as { maxUnlockedLevel?: unknown }).maxUnlockedLevel;
-      this.maxUnlockedLevel = Number.isInteger(maxLvl)
-        ? Math.min(Math.max(maxLvl as number, this.currentLevel), LEVELS.length)
-        : this.currentLevel;
+      if (!Number.isInteger(maxLvl)) {
+        this.currentLevel = Math.max(this.currentLevel, keysUnlock);
+      }
+      this.maxUnlockedLevel = Math.min(
+        Math.max(
+          Number.isInteger(maxLvl) ? (maxLvl as number) : 1,
+          this.currentLevel,
+          keysUnlock
+        ),
+        LEVELS.length
+      );
     } catch {
       // Corrupt save — start fresh
     }

@@ -54,11 +54,13 @@ export class Level2Scene extends BaseLevelScene {
       }
     }
 
-    // Moonbeams slicing through the canopy — the lamppost analog
+    // Moonbeams slicing through the canopy — the lamppost analog. Stretched
+    // so the shaft actually reaches the ground instead of stopping mid-air.
     for (const x of [900, 1900, 2750]) {
       const beam = this.add
         .image(x, 0, Assets.MOONBEAM)
         .setOrigin(0.5, 0)
+        .setScale(1, 1.6)
         .setAlpha(0.5)
         .setDepth(-5);
       this.tweens.add({
@@ -69,8 +71,16 @@ export class Level2Scene extends BaseLevelScene {
         repeat: -1,
       });
       if (isWebGL) {
+        // Steady moonlight breathes with the beam — flickerLights would make
+        // it strobe like fire
         const light = this.lights.addLight(x, WORLD.groundY - 40, 200, 0xcfe8c0, 0.5);
-        this.flickerLights.push({ light, base: 0.5, seed: Math.random() * 100 });
+        this.tweens.add({
+          targets: light,
+          intensity: { from: 0.38, to: 0.58 },
+          duration: 4000,
+          yoyo: true,
+          repeat: -1,
+        });
       }
     }
   }
