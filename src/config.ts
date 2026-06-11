@@ -73,17 +73,13 @@ export const ZOMBIE = {
   } satisfies Record<ZombieVariant, ZombieVariantDef>,
 };
 
+// Shared boss physics — per-boss stats (hp, speeds, damage, attack intervals)
+// live in each level's BossDef (src/levels.ts).
 export const BOSS = {
-  hp: 260,
-  walkSpeed: 90,
-  enragedWalkSpeed: 135,
   chargeSpeed: 390,
   chargeWindupMs: 550,
   chargeMs: 700,
   wallStunMs: 700,
-  attackIntervalMs: 2200,
-  enragedAttackIntervalMs: 1500,
-  contactDamage: 20,
   enrageThreshold: 0.5,
   jumpSlamVelocity: -520,
   shockwaveRange: 150,

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Assets } from '../assets';
-import { BOSS, GAME_H, GAME_W, WORLD, ZOMBIE } from '../config';
+import { BOSS, GAME_H, GAME_W, WORLD, ZOMBIE, ZombieVariant } from '../config';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
 import { Juice } from '../core/Juice';
@@ -16,6 +16,13 @@ import { LevelDef } from '../levels';
 interface ParallaxLayer {
   sprite: Phaser.GameObjects.TileSprite;
   factor: number;
+}
+
+interface SummonEvent {
+  x: number;
+  variant: ZombieVariant;
+  count: number;
+  maxAlive: number;
 }
 
 // Shared level machinery: world building, combat wiring, the boss encounter,
@@ -112,13 +119,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.zombies = this.add.group();
     // First zombie sits outside aggro+patrol reach of the spawn point
     for (const spawn of this.def.zombieSpawns) {
-      // Scaled bodies reach further below the sprite center than the default
-      // spawn height (tuned for scale 1) allows — lift them so no variant
-      // embeds more than the arcade-tolerated ~8px into the ground
-      const v = ZOMBIE.variants[spawn.variant];
-      const bodyBottomOffset = (v.base === 'urban' ? 64 : 48) * v.scale;
-      const y = spawn.y ?? WORLD.groundY - 56 - Math.max(0, bodyBottomOffset - 64);
-      const zombie = new Zombie(this, spawn.x, y, spawn.variant);
+      const zombie = new Zombie(this, spawn.x, spawn.y ?? this.zombieSpawnY(spawn.variant), spawn.variant);
       zombie.setTarget(this.player);
       zombie.setDepth(5);
       this.zombies.add(zombie);
@@ -329,6 +330,37 @@ export abstract class BaseLevelScene extends Phaser.Scene {
         this.player.takeDamage(BOSS.shockwaveDamage, x);
       }
     });
+
+    // Boss summons minions: cap counts only live (non-dying) zombies so
+    // corpses mid-death-animation don't starve the cap during gore-heavy fights
+    this.events.on('boss-summon', ({ x, variant, count, maxAlive }: SummonEvent) => {
+      const alive = this.zombies
+        .getChildren()
+        .filter((z) => z.active && !(z as Zombie).isDead()).length;
+      const room = Math.max(0, maxAlive - alive);
+      for (let i = 0; i < Math.min(count, room); i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        const zx = Phaser.Math.Clamp(
+          x + side * (90 + i * 30),
+          this.def.arenaLeft + 60,
+          this.def.worldWidth - 60
+        );
+        const z = new Zombie(this, zx, this.zombieSpawnY(variant), variant);
+        z.setTarget(this.player);
+        z.setDepth(5);
+        this.zombies.add(z);
+        dustPuff(this, zx, WORLD.groundY - 10, 8);
+      }
+    });
+  }
+
+  // Scaled bodies reach further below the sprite center than the default
+  // spawn height (tuned for scale 1) allows — lift them so no variant
+  // embeds more than the arcade-tolerated ~8px into the ground
+  private zombieSpawnY(variant: ZombieVariant): number {
+    const v = ZOMBIE.variants[variant];
+    const bodyBottomOffset = (v.base === 'urban' ? 64 : 48) * v.scale;
+    return WORLD.groundY - 56 - Math.max(0, bodyBottomOffset - 64);
   }
 
   private applyHit(
@@ -409,7 +441,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   // ------------------------------------------------------------------
 
   private createBoss() {
-    this.boss = new Boss(this, this.def.bossSpawnX, WORLD.groundY - 80, this.juice);
+    this.boss = new Boss(this, this.def.bossSpawnX, WORLD.groundY - 80, this.juice, this.def.boss);
     this.boss.setTarget(this.player);
     this.physics.add.collider(this.boss, this.solids);
 
@@ -541,6 +573,17 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     corpse.setVelocity(0, 0);
     corpse.play('urban-dead', true);
     this.time.delayedCall(1600, () => corpse.destroy());
+
+    // Summoned minions pop when their king dies — no stragglers past the fight
+    this.zombies
+      .getChildren()
+      .slice()
+      .forEach((zObj) => {
+        const z = zObj as Zombie;
+        this.gore.burst(z.x, z.y, false);
+        z.destroy();
+      });
+    this.contactCooldown.clear();
 
     // The level key floats down
     this.time.delayedCall(800, () => {

@@ -4,6 +4,7 @@ import { BOSS } from '../config';
 import { Juice } from '../core/Juice';
 import { SynthAudio } from '../core/SynthAudio';
 import { dustPuff, flashSprite, knockback, lit, shockwave } from '../fx/Effects';
+import type { BossDef } from '../levels';
 
 export enum BossState {
   SITTING,
@@ -12,6 +13,7 @@ export enum BossState {
   CHARGE_WINDUP,
   CHARGING,
   STUNNED,
+  SUMMONING,
   LEAPING,
   DEAD,
 }
@@ -33,27 +35,32 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
   private juice: Juice;
   private anims_ = ZombieAnims.urban;
   private chargeDir = 1;
+  private def: BossDef;
+  private nextSummonAt = 0;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, juice: Juice) {
+  constructor(scene: Phaser.Scene, x: number, y: number, juice: Juice, def: BossDef) {
     super(scene, x, y, Assets.URBAN_IDLE, 0);
     this.juice = juice;
+    this.def = def;
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
     lit(this);
 
-    this.maxHealth = BOSS.hp;
-    this.health = BOSS.hp;
+    this.maxHealth = def.hp;
+    this.health = def.hp;
 
-    this.setScale(1.8);
+    this.setScale(def.scale);
+    if (def.tint !== undefined) this.setTint(def.tint);
     this.setCollideWorldBounds(true);
+    // All bosses are urban-base sprites for now — urban body values
     this.body!.setSize(40, 80);
     this.body!.setOffset(44, 48);
 
     (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
     this.setImmovable(true);
 
-    this.throne = scene.add.image(x, y + 8, Assets.THRONE).setDepth(this.depth - 1);
+    this.throne = scene.add.image(x, y + 8, def.throneTexture).setDepth(this.depth - 1);
     lit(this.throne);
     this.setDepth(6);
 
@@ -73,7 +80,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
   }
 
   getDamage(): number {
-    return BOSS.contactDamage;
+    return this.def.contactDamage;
   }
 
   get isVulnerable(): boolean {
@@ -95,6 +102,8 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
         this.bossState = BossState.FIGHTING;
         (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(true);
         this.setImmovable(false);
+        // The opening move is always a readable charge, never a summon
+        this.nextSummonAt = this.scene.time.now + 2500;
       },
     });
   }
@@ -105,13 +114,14 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
     // Bonus damage while stunned from a wall hit
     const final = this.bossState === BossState.STUNNED ? Math.floor(amount * 1.5) : amount;
     this.health -= final;
-    flashSprite(this, 0xffffff);
-    if (this.body) {
-      knockback(this.body as Phaser.Physics.Arcade.Body, this.target?.x ?? this.x - 1, 90);
-    }
-
+    // Enrage check BEFORE the flash so the restore tint captures the rage red
+    // on the very hit that triggers it
     if (this.health <= this.maxHealth * BOSS.enrageThreshold && !this.enraged) {
       this.enrage();
+    }
+    flashSprite(this, 0xffffff, undefined, this.enraged ? 0xff6655 : this.def.tint);
+    if (this.body) {
+      knockback(this.body as Phaser.Physics.Arcade.Body, this.target?.x ?? this.x - 1, 90);
     }
     if (this.health <= 0) {
       this.health = 0;
@@ -157,19 +167,20 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
       case BossState.FIGHTING: {
         this.attackTimer += delta;
         this.setFlipX(dir < 0);
-        const walkSpeed = this.enraged ? BOSS.enragedWalkSpeed : BOSS.walkSpeed;
+        const walkSpeed = this.enraged ? this.def.enragedWalkSpeed : this.def.walkSpeed;
         this.setVelocityX(dir * walkSpeed);
         if (this.anims.currentAnim?.key !== this.anims_.hurt || !this.anims.isPlaying) {
           this.play(this.anims_.walk, true);
         }
 
-        const interval = this.enraged ? BOSS.enragedAttackIntervalMs : BOSS.attackIntervalMs;
+        const interval = this.enraged ? this.def.enragedAttackIntervalMs : this.def.attackIntervalMs;
         if (this.attackTimer > interval && body.blocked.down) {
           this.attackTimer = 0;
-          // Enraged: mix in leap slams
-          if (this.enraged && Math.random() < 0.45) {
+          if (this.def.summon && time >= this.nextSummonAt) {
+            this.startSummon(time);
+          } else if (this.def.canLeap && this.enraged && Math.random() < 0.45) {
             this.startLeap(dir);
-          } else {
+          } else if (this.def.canCharge) {
             this.startChargeWindup(dir, time);
           }
         }
@@ -211,6 +222,21 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
         }
         break;
 
+      case BossState.SUMMONING:
+        this.setVelocityX(0);
+        if (time >= this.stateUntil) {
+          SynthAudio.roar();
+          this.scene.events.emit('boss-summon', {
+            x: this.x,
+            variant: this.def.summon!.variant,
+            count: this.enraged ? this.def.summon!.enragedCount : this.def.summon!.count,
+            maxAlive: this.def.summon!.maxAlive,
+          });
+          this.nextSummonAt = time + this.def.summon!.intervalMs;
+          this.bossState = BossState.FIGHTING;
+        }
+        break;
+
       case BossState.LEAPING:
         if (body.blocked.down && body.velocity.y >= 0 && time >= this.stateUntil) {
           // Landed: shockwave
@@ -234,8 +260,17 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
     this.chargeDir = dir;
     this.stateUntil = time + BOSS.chargeWindupMs;
     this.setVelocityX(0);
-    flashSprite(this, 0xff5533, BOSS.chargeWindupMs - 80);
+    flashSprite(this, 0xff5533, BOSS.chargeWindupMs - 80, this.enraged ? 0xff6655 : this.def.tint);
     dustPuff(this.scene, this.x - dir * 30, this.y + 50, 6);
+  }
+
+  // Telegraphed green flash, then a roar and a 'boss-summon' scene event.
+  // Stays vulnerable the whole time — it's a punish window for brave kids.
+  private startSummon(time: number) {
+    this.bossState = BossState.SUMMONING;
+    this.stateUntil = time + 500;
+    this.setVelocityX(0);
+    flashSprite(this, 0x88ff88, 440, this.enraged ? 0xff6655 : this.def.tint);
   }
 
   private startLeap(dir: number) {
