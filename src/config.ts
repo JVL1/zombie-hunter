@@ -84,4 +84,6 @@ export const BOSS = {
   jumpSlamVelocity: -520,
   shockwaveRange: 150,
   shockwaveDamage: 15,
+  summonTelegraphMs: 500,
+  summonOpeningGraceMs: 2500, // min delay before a boss's first summon
 };

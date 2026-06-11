@@ -102,8 +102,11 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
         this.bossState = BossState.FIGHTING;
         (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(true);
         this.setImmovable(false);
-        // The opening move is always a readable charge, never a summon
-        this.nextSummonAt = this.scene.time.now + 2500;
+        // The opening move is always a readable charge, never a summon —
+        // the window must outlast the first attack tick for slow bosses
+        this.nextSummonAt =
+          this.scene.time.now +
+          Math.max(BOSS.summonOpeningGraceMs, this.def.attackIntervalMs + 300);
       },
     });
   }
@@ -119,7 +122,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
     if (this.health <= this.maxHealth * BOSS.enrageThreshold && !this.enraged) {
       this.enrage();
     }
-    flashSprite(this, 0xffffff, undefined, this.enraged ? 0xff6655 : this.def.tint);
+    flashSprite(this, 0xffffff, undefined, () => this.currentBaseTint());
     if (this.body) {
       knockback(this.body as Phaser.Physics.Arcade.Body, this.target?.x ?? this.x - 1, 90);
     }
@@ -260,7 +263,9 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
     this.chargeDir = dir;
     this.stateUntil = time + BOSS.chargeWindupMs;
     this.setVelocityX(0);
-    flashSprite(this, 0xff5533, BOSS.chargeWindupMs - 80, this.enraged ? 0xff6655 : this.def.tint);
+    flashSprite(this, 0xff5533, BOSS.chargeWindupMs - 80, () =>
+      this.enraged ? 0xff6655 : this.def.tint
+    );
     dustPuff(this.scene, this.x - dir * 30, this.y + 50, 6);
   }
 
@@ -268,9 +273,19 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
   // Stays vulnerable the whole time — it's a punish window for brave kids.
   private startSummon(time: number) {
     this.bossState = BossState.SUMMONING;
-    this.stateUntil = time + 500;
+    this.stateUntil = time + BOSS.summonTelegraphMs;
     this.setVelocityX(0);
-    flashSprite(this, 0x88ff88, 440, this.enraged ? 0xff6655 : this.def.tint);
+    flashSprite(this, 0x88ff88, BOSS.summonTelegraphMs - 60, () =>
+      this.enraged ? 0xff6655 : this.def.tint
+    );
+  }
+
+  // What the sprite should return to after a hit flash. State-aware so a hit
+  // during a telegraph restores the warning color instead of erasing it.
+  private currentBaseTint(): number | undefined {
+    if (this.bossState === BossState.SUMMONING) return 0x88ff88;
+    if (this.bossState === BossState.CHARGE_WINDUP) return 0xff5533;
+    return this.enraged ? 0xff6655 : this.def.tint;
   }
 
   private startLeap(dir: number) {

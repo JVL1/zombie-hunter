@@ -340,11 +340,19 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       const room = Math.max(0, maxAlive - alive);
       for (let i = 0; i < Math.min(count, room); i++) {
         const side = i % 2 === 0 ? -1 : 1;
-        const zx = Phaser.Math.Clamp(
+        let zx = Phaser.Math.Clamp(
           x + side * (90 + i * 30),
           this.def.arenaLeft + 60,
           this.def.worldWidth - 60
         );
+        // Never materialize on top of the player — that's an unreactable hit
+        if (Math.abs(zx - this.player.x) < 70) {
+          zx = Phaser.Math.Clamp(
+            zx + (zx >= this.player.x ? 80 : -80),
+            this.def.arenaLeft + 60,
+            this.def.worldWidth - 60
+          );
+        }
         const z = new Zombie(this, zx, this.zombieSpawnY(variant), variant);
         z.setTarget(this.player);
         z.setDepth(5);

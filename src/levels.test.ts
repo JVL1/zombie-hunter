@@ -64,4 +64,23 @@ describe('level registry integrity', () => {
     expect(levelByNumber(0)).toBe(LEVELS[0]);
     expect(levelByNumber(99)).toBe(LEVELS[LEVELS.length - 1]);
   });
+
+  it('boss defs are internally sane', () => {
+    for (const def of LEVELS) {
+      const b = def.boss;
+      expect(b.hp).toBeGreaterThan(0);
+      expect(b.scale).toBeGreaterThan(0);
+      expect(b.enragedWalkSpeed).toBeGreaterThanOrEqual(b.walkSpeed);
+      expect(b.enragedAttackIntervalMs).toBeLessThanOrEqual(b.attackIntervalMs);
+      // A boss with no attacks at all would just walk at you forever
+      expect(b.canCharge || b.canLeap || b.summon !== undefined).toBe(true);
+      if (b.summon) {
+        expect(b.summon.count).toBeGreaterThan(0);
+        expect(b.summon.enragedCount).toBeGreaterThanOrEqual(b.summon.count);
+        expect(b.summon.maxAlive).toBeGreaterThanOrEqual(b.summon.enragedCount);
+        // Summons must be breathers between waves, not a continuous flood
+        expect(b.summon.intervalMs).toBeGreaterThan(b.attackIntervalMs);
+      }
+    }
+  });
 });

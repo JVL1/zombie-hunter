@@ -14,13 +14,16 @@ export function flashSprite(
   sprite: Phaser.GameObjects.Sprite,
   color = 0xffffff,
   ms = 80,
-  restoreTint?: number
+  restoreTint?: number | (() => number | undefined)
 ) {
   sprite.setTintFill(color);
   sprite.scene.time.delayedCall(ms, () => {
     if (!sprite.active) return;
-    if (restoreTint !== undefined) {
-      sprite.setTint(restoreTint);
+    // Resolve at restore time — the right tint may have changed mid-flash
+    // (e.g. a boss enraging during its own telegraph)
+    const tint = typeof restoreTint === 'function' ? restoreTint() : restoreTint;
+    if (tint !== undefined) {
+      sprite.setTint(tint);
     } else {
       sprite.clearTint();
     }
