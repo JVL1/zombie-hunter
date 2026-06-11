@@ -362,13 +362,14 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     });
   }
 
-  // Scaled bodies reach further below the sprite center than the default
-  // spawn height (tuned for scale 1) allows — lift them so no variant
-  // embeds more than the arcade-tolerated ~8px into the ground
+  // Spawn with the body bottom 8px ABOVE the ground so every variant lands
+  // cleanly. A body that spawns overlapping the ground-top tile is flagged
+  // embedded — arcade skips separation, it sinks through onto the fill row
+  // and then wedges against tile seams whenever it walks (frozen zombies).
   private zombieSpawnY(variant: ZombieVariant): number {
     const v = ZOMBIE.variants[variant];
     const bodyBottomOffset = (v.base === 'urban' ? 64 : 48) * v.scale;
-    return WORLD.groundY - 56 - Math.max(0, bodyBottomOffset - 64);
+    return WORLD.groundY - 8 - bodyBottomOffset;
   }
 
   private applyHit(

@@ -119,7 +119,7 @@ const levelTwo: LevelDef = {
   levelNumber: 2,
   name: 'THE BROKEN DOWN FOREST',
   victorySubtitle: 'The forest horde is broken',
-  nextSceneKey: 'MainMenu', // flipped to 'Level3' once Level 3 is built
+  nextSceneKey: 'Level3',
   keyIndex: 1,
   worldWidth: 3400,
   playerSpawnX: 100,
@@ -187,7 +187,92 @@ const levelTwo: LevelDef = {
   arenaLeft: 2790,
 };
 
-export const LEVELS: LevelDef[] = [levelOne, levelTwo];
+// Level 3's parked-but-"moving" train, fought across the roofs. Geometry is
+// data (not scene code) so the invariant tests can see it. All x values are
+// CENTERS. Roof slab tiles are 32x16, so a roof solid at y spans y-8..y+8:
+//   - car roof top surface 372, underside 388 → 88px corridor under the cars
+//     (urban body 80px fits; a Zanter at 116px can't follow — comedy)
+//   - locomotive roof top surface 348 (climb the loco, step down onto car 1)
+//   - loco→car-1 gap is 14px (can't fall through); between-car gaps are 68px
+//     (fall through onto the track, double-jump back out)
+export const TRAIN = {
+  locomotiveX: 1390,
+  locomotiveW: 200,
+  locoRoofY: 356,
+  carXs: [1600, 1860, 2120, 2380],
+  carW: 192,
+  carRoofY: 380,
+};
+
+const levelThree: LevelDef = {
+  sceneKey: 'Level3',
+  levelNumber: 3,
+  name: 'THE ABANDONED RAILROAD',
+  victorySubtitle: 'You stopped the zombie train',
+  nextSceneKey: 'MainMenu', // flipped to 'Level4' once Level 4 is built
+  keyIndex: 2,
+  worldWidth: 3600,
+  playerSpawnX: 100,
+  ambientColor: 0x5a5048, // rust-dust dusk
+  parallax: [
+    { key: Assets.RAIL_NIGHT_FAR, factor: 0.12 },
+    { key: Assets.RAIL_NIGHT_MID, factor: 0.3 },
+    { key: Assets.RAIL_NIGHT_NEAR, factor: 0.55 },
+  ],
+  textures: {
+    groundTop: Assets.RAIL_GROUND_TOP,
+    groundFill: Assets.RAIL_GROUND_FILL,
+    platform: Assets.TRAIN_CAR_TOP, // floating platforms are detached roof slabs
+    stone: Assets.STONE, // ballast stones reuse the city stone
+  },
+  // Approach + boss-yard platforms — the train (x 1290-2476) is built from TRAIN data
+  platforms: [
+    [420, 390, 4],
+    [850, 330, 5],
+    [2700, 380, 4],
+  ],
+  stairs: [
+    [600, 408, 4, 38, 50],
+    [2850, 410, 4, 38, 52],
+  ],
+  // Roof spawns use explicit y = sprite CENTER: the body reaches 64*scale
+  // below it (urban base), so y must keep the body bottom above the roof
+  // slab top (372) — they drop ~20px onto the roof, close enough that the
+  // 16px slab can't be tunneled through
+  zombieSpawns: [
+    { x: 520, variant: 'zombie' },
+    { x: 760, variant: 'urban' },
+    { x: 1000, variant: 'zanter' }, // first Zanter guards the train
+    // Roof x values sit in the left third of each car: urban patrol legs are
+    // 110px (55px/s * 2s), so spawning centered walks them off the right edge
+    // in the first leg — from the left third they oscillate on the roof
+    { x: 1545, variant: 'urban', y: 290 }, // car 1 roof (urban body bottom 354)
+    { x: 1880, variant: 'zanter', y: 255 }, // car 2 roof (zanter body bottom ~348)
+    { x: 2065, variant: 'urban', y: 290 }, // car 3 roof
+    { x: 2400, variant: 'zanter', y: 255 }, // car 4 roof
+    { x: 2650, variant: 'zombie' },
+    { x: 2900, variant: 'zanter' },
+  ],
+  boss: {
+    name: 'DIRT MUTATED ZOMBIE',
+    hp: 340,
+    scale: 1.85,
+    tint: 0xb08d5a,
+    walkSpeed: 95,
+    enragedWalkSpeed: 145,
+    contactDamage: 22,
+    attackIntervalMs: 2100,
+    enragedAttackIntervalMs: 1400,
+    throneTexture: Assets.THRONE_TRAIN,
+    canCharge: true,
+    canLeap: true,
+  },
+  bossSpawnX: 3350,
+  triggerX: 3100,
+  arenaLeft: 3000,
+};
+
+export const LEVELS: LevelDef[] = [levelOne, levelTwo, levelThree];
 
 export function levelByNumber(n: number): LevelDef {
   if (!Number.isFinite(n)) n = 1;

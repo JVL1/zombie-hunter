@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LEVELS, levelByNumber } from './levels';
-import { WORLD } from './config';
+import { LEVELS, TRAIN, levelByNumber } from './levels';
+import { WORLD, ZOMBIE } from './config';
 
 describe('level registry integrity', () => {
   it('level numbers and key indexes are sequential from 1 / 0', () => {
@@ -81,6 +81,47 @@ describe('level registry integrity', () => {
         // Summons must be breathers between waves, not a continuous flood
         expect(b.summon.intervalMs).toBeGreaterThan(b.attackIntervalMs);
       }
+    }
+  });
+});
+
+describe('level 3 train geometry', () => {
+  // Roof spans (left/right edges) for the locomotive and the four boxcars
+  const spans = [
+    [TRAIN.locomotiveX - TRAIN.locomotiveW / 2, TRAIN.locomotiveX + TRAIN.locomotiveW / 2],
+    ...TRAIN.carXs.map((x) => [x - TRAIN.carW / 2, x + TRAIN.carW / 2]),
+  ];
+
+  it('leaves room for an urban zombie (80px body) under the car roofs', () => {
+    expect(WORLD.groundY - (TRAIN.carRoofY + 8)).toBeGreaterThan(80);
+  });
+
+  it('a Zanter (116px body) cannot fit under the car roofs — comedy invariant', () => {
+    const zanter = ZOMBIE.variants.zanter;
+    const zanterHeight = 80 * zanter.scale;
+    expect(WORLD.groundY - (TRAIN.carRoofY + 8)).toBeLessThan(zanterHeight);
+  });
+
+  it('cars do not overlap and gaps are jumpable (≤90px) or steppable', () => {
+    for (let i = 1; i < spans.length; i++) {
+      const gap = spans[i][0] - spans[i - 1][1];
+      expect(gap).toBeGreaterThanOrEqual(0);
+      expect(gap).toBeLessThanOrEqual(90);
+    }
+  });
+
+  it('roof spawns (explicit y) land on a car or locomotive span', () => {
+    const def = LEVELS.find((d) => d.sceneKey === 'Level3')!;
+    const roofSpawns = def.zombieSpawns.filter((s) => s.y !== undefined);
+    expect(roofSpawns.length).toBeGreaterThan(0);
+    for (const s of roofSpawns) {
+      expect(spans.some(([l, r]) => s.x > l + 20 && s.x < r - 20)).toBe(true);
+      expect(s.y!).toBeLessThan(TRAIN.carRoofY - 40); // spawns above the roof, falls onto it — no tunneling distance
+      // Body bottoms (sprite center + scaled body reach) must clear the roof
+      // slab top (carRoofY - 8) or the zombie spawns embedded in / through it
+      const v = ZOMBIE.variants[s.variant];
+      const bodyBottom = s.y! + (v.base === 'urban' ? 64 : 48) * v.scale;
+      expect(bodyBottom).toBeLessThan(TRAIN.carRoofY - 8);
     }
   });
 });
