@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
 import { ZombieAnims, ZombieAnimSet } from '../assets';
-import { ZOMBIE } from '../config';
+import { ZOMBIE, ZombieVariant } from '../config';
 import { SynthAudio } from '../core/SynthAudio';
 import { dustPuff, flashSprite, floatText, knockback, lit } from '../fx/Effects';
 
-export type ZombieVariant = 'zombie' | 'urban';
+export type { ZombieVariant } from '../config';
 
 enum ZombieState {
   PATROL,

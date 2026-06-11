@@ -117,5 +117,6 @@ const levelOne: LevelDef = {
 export const LEVELS: LevelDef[] = [levelOne];
 
 export function levelByNumber(n: number): LevelDef {
-  return LEVELS[Math.min(Math.max(n, 1), LEVELS.length) - 1];
+  if (!Number.isFinite(n)) n = 1;
+  return LEVELS[Math.min(Math.max(Math.floor(n), 1), LEVELS.length) - 1];
 }

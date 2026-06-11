@@ -117,6 +117,7 @@ describe('level progression', () => {
     fresh.load();
     expect(fresh.currentLevel).toBe(1);
     expect(fresh.coins).toBe(10);
+    expect(fresh.keys[0]).toBe(true);
   });
 
   it('clamps corrupt or future currentLevel values on load', () => {
