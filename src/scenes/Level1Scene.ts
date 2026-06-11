@@ -11,6 +11,9 @@ import { Pickup } from '../entities/Pickups';
 import { Zombie } from '../entities/Zombie';
 import { dustPuff, floatText, lit, shockwave } from '../fx/Effects';
 import { GoreSystem } from '../fx/Splatter';
+import { levelByNumber } from '../levels';
+
+const def = levelByNumber(1);
 
 interface ParallaxLayer {
   sprite: Phaser.GameObjects.TileSprite;
@@ -75,7 +78,7 @@ export class Level1Scene extends Phaser.Scene {
       cam.postFX.addBloom(0xffffff, 1, 1, 1.1, 0.6, 2);
     }
 
-    this.physics.world.setBounds(0, 0, WORLD.width, WORLD.height);
+    this.physics.world.setBounds(0, 0, def.worldWidth, WORLD.height);
 
     this.buildBackdrop();
     this.buildTerrain();
@@ -87,12 +90,12 @@ export class Level1Scene extends Phaser.Scene {
     this.physics.add.collider(this.player, this.solids);
 
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, WORLD.width, WORLD.height);
+    cam.setBounds(0, 0, def.worldWidth, WORLD.height);
     cam.startFollow(this.player, true, 0.12, 0.12);
     cam.setDeadzone(110, 70);
 
     // --- Gore (decals render above terrain) ---
-    this.gore = new GoreSystem(this, WORLD.width, WORLD.height, 4);
+    this.gore = new GoreSystem(this, def.worldWidth, WORLD.height, 4);
 
     // --- Zombies ---
     this.zombies = this.add.group();
@@ -208,7 +211,7 @@ export class Level1Scene extends Phaser.Scene {
     this.solids = this.physics.add.staticGroup();
 
     // Ground: two tile rows across the level
-    for (let x = 0; x < WORLD.width; x += 32) {
+    for (let x = 0; x < def.worldWidth; x += 32) {
       lit(this.solids.create(x + 16, WORLD.groundY + 16, Assets.GROUND_TOP).setDepth(3));
       lit(this.solids.create(x + 16, WORLD.groundY + 48, Assets.GROUND_FILL).setDepth(3));
     }
@@ -474,8 +477,8 @@ export class Level1Scene extends Phaser.Scene {
       this.contactCooldown.clear();
 
       this.time.delayedCall(1100, () => {
-        this.physics.world.setBounds(BOSS.arenaLeft, 0, WORLD.width - BOSS.arenaLeft, WORLD.height);
-        cam.setBounds(BOSS.arenaLeft, 0, WORLD.width - BOSS.arenaLeft, WORLD.height);
+        this.physics.world.setBounds(def.arenaLeft, 0, def.worldWidth - def.arenaLeft, WORLD.height);
+        cam.setBounds(def.arenaLeft, 0, def.worldWidth - def.arenaLeft, WORLD.height);
         cam.startFollow(this.player, true, 0.12, 0.12);
         this.showBossHealthBar();
         this.cinematic = false;
@@ -597,7 +600,7 @@ export class Level1Scene extends Phaser.Scene {
     }
 
     // Boss
-    if (!this.bossTriggered && this.player.x > BOSS.triggerX) {
+    if (!this.bossTriggered && this.player.x > def.triggerX) {
       this.triggerBossEncounter();
     }
     if (this.boss && !this.boss.isDead()) {

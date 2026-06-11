@@ -4,10 +4,11 @@ export const GAME_W = 960;
 export const GAME_H = 540;
 
 export const WORLD = {
-  width: 3200,
   height: 540,
   groundY: 476, // top surface of the ground
 };
+
+export type ZombieVariant = 'zombie' | 'urban';
 
 export const PLAYER = {
   accel: 2200,
@@ -75,6 +76,4 @@ export const BOSS = {
   jumpSlamVelocity: -520,
   shockwaveRange: 150,
   shockwaveDamage: 15,
-  arenaLeft: 2600,
-  triggerX: 2700,
 };
