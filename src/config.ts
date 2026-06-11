@@ -23,7 +23,7 @@ export const PLAYER = {
   dashCooldownMs: 500,
   slamFallSpeed: 680,
   slamPogoVelocity: -400,
-  hurtInvulnMs: 900,
+  hurtInvulnMs: 1100,
   maxHealth: 100,
   contactKnockback: 220,
 };
@@ -52,7 +52,7 @@ export const ZOMBIE = {
   lungeMs: 350,
   lungeRecoverMs: 450,
   lungeCooldownMs: 1900,
-  contactDamage: 10,
+  contactDamage: 8,
   contactCooldownMs: 1000,
   jumpFailIntervalMs: 1600,
   heartDropChance: 0.2,
