@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Assets } from '../assets';
 import { GAME_H, GAME_W } from '../config';
+import { GameState } from '../core/GameState';
 import { SynthAudio } from '../core/SynthAudio';
 
 export class GameOverScene extends Phaser.Scene {
@@ -57,20 +58,31 @@ export class GameOverScene extends Phaser.Scene {
       alpha: { start: 0.8, end: 0.3 },
     });
 
-    this.input.keyboard!.on('keydown-ENTER', () => {
+    // One-shot retry of the level you died on, shared by keyboard + gamepad
+    let started = false;
+    const go = () => {
+      if (started) return;
+      started = true;
       SynthAudio.uiSelect();
-      this.scene.start('Level1');
-    });
+      this.scene.start(GameState.getInstance().currentLevelDef.sceneKey);
+    };
+    this.input.keyboard!.once('keydown-ENTER', go);
 
+    // Gamepad: edge-triggered — A may still be held from the fight that killed you
+    let aWasUp = false;
     const padCheck = this.time.addEvent({
       delay: 100,
       loop: true,
       callback: () => {
         const pad = this.input.gamepad?.getPad(0);
-        if (pad?.A) {
+        if (!pad) return;
+        if (!pad.A) {
+          aWasUp = true;
+          return;
+        }
+        if (aWasUp) {
           padCheck.remove();
-          SynthAudio.uiSelect();
-          this.scene.start('Level1');
+          go();
         }
       },
     });

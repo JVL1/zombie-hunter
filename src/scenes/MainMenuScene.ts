@@ -1,11 +1,14 @@
 import Phaser from 'phaser';
 import { Assets } from '../assets';
 import { GAME_H, GAME_W } from '../config';
+import { GameState } from '../core/GameState';
 import { SynthAudio } from '../core/SynthAudio';
+import { LEVELS, levelByNumber } from '../levels';
 
 // Title screen: night city skyline, rain, blood moon, flickering title.
 export class MainMenuScene extends Phaser.Scene {
   private starting = false;
+  private padAWasUp = false;
 
   constructor() {
     super({ key: 'MainMenu' });
@@ -13,6 +16,7 @@ export class MainMenuScene extends Phaser.Scene {
 
   create() {
     this.starting = false;
+    this.padAWasUp = false;
 
     this.add.image(0, 0, Assets.SKY).setOrigin(0);
     this.add.image(740, 100, Assets.GLOW).setScale(4.5).setTint(0xffbb88).setAlpha(0.5);
@@ -105,6 +109,22 @@ export class MainMenuScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
 
+    // Replay hint — only once at least one level has been cleared
+    if (GameState.getInstance().currentLevel > 1) {
+      this.add
+        .text(
+          GAME_W / 2,
+          355,
+          `1-${Math.min(GameState.getInstance().currentLevel, LEVELS.length)}: replay a cleared level`,
+          {
+            fontFamily: 'monospace',
+            fontSize: '13px',
+            color: '#8888a0',
+          }
+        )
+        .setOrigin(0.5);
+    }
+
     this.add
       .text(
         GAME_W / 2,
@@ -126,11 +146,33 @@ export class MainMenuScene extends Phaser.Scene {
     this.input.on('pointerdown', () => SynthAudio.unlock());
     this.input.keyboard!.on('keydown-ENTER', () => this.startGame());
     this.input.on('pointerdown', () => this.startGame());
+
+    // Number keys replay cleared levels (kid-friendly: show friends Level 1 after beating it)
+    const keyNames = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'];
+    for (let n = 1; n <= LEVELS.length; n++) {
+      this.input.keyboard!.on(`keydown-${keyNames[n - 1]}`, () => {
+        if (this.starting) return;
+        const gs = GameState.getInstance();
+        if (n > gs.currentLevel) return; // locked
+        gs.currentLevel = n; // retry/GameOver routing follows the replayed level
+        gs.save();
+        this.starting = true;
+        SynthAudio.unlock();
+        SynthAudio.uiSelect();
+        this.scene.start(levelByNumber(n).sceneKey);
+      });
+    }
   }
 
   update() {
+    // Edge-triggered: A may still be held from Victory's gamepad advance — require a release first
     const pad = this.input.gamepad?.getPad(0);
-    if (pad?.A) {
+    if (!pad) return;
+    if (!pad.A) {
+      this.padAWasUp = true;
+      return;
+    }
+    if (this.padAWasUp) {
       SynthAudio.unlock();
       this.startGame();
     }
@@ -142,6 +184,8 @@ export class MainMenuScene extends Phaser.Scene {
     SynthAudio.unlock();
     SynthAudio.uiSelect();
     this.cameras.main.fadeOut(500, 0, 0, 0);
-    this.time.delayedCall(550, () => this.scene.start('Level1'));
+    this.time.delayedCall(550, () =>
+      this.scene.start(GameState.getInstance().currentLevelDef.sceneKey)
+    );
   }
 }

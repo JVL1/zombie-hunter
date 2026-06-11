@@ -3,6 +3,7 @@ import { Assets } from '../assets';
 import { GAME_H, GAME_W } from '../config';
 import { GameState } from '../core/GameState';
 import { SynthAudio } from '../core/SynthAudio';
+import { LEVELS } from '../levels';
 
 export class VictoryScene extends Phaser.Scene {
   constructor() {
@@ -11,13 +12,14 @@ export class VictoryScene extends Phaser.Scene {
 
   create() {
     const gs = GameState.getInstance();
+    const def = gs.currentLevelDef;
     gs.save();
 
     this.add.image(0, 0, Assets.SKY).setOrigin(0).setTint(0x88aa88);
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.5);
 
     this.add
-      .text(GAME_W / 2, 130, 'LEVEL 1 CLEARED!', {
+      .text(GAME_W / 2, 130, `LEVEL ${def.levelNumber} CLEARED!`, {
         fontFamily: 'monospace',
         fontSize: '52px',
         fontStyle: 'bold',
@@ -28,7 +30,7 @@ export class VictoryScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(GAME_W / 2, 185, 'The Abandoned City is yours', {
+      .text(GAME_W / 2, 185, def.victorySubtitle, {
         fontFamily: 'monospace',
         fontSize: '18px',
         color: '#aaaacc',
@@ -47,7 +49,7 @@ export class VictoryScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
     this.add
-      .text(GAME_W / 2, 325, `KEY 1 of 5 COLLECTED`, {
+      .text(GAME_W / 2, 325, `KEY ${def.levelNumber} of 5 COLLECTED`, {
         fontFamily: 'monospace',
         fontSize: '20px',
         fontStyle: 'bold',
@@ -64,8 +66,14 @@ export class VictoryScene extends Phaser.Scene {
       )
       .setOrigin(0.5);
 
+    const next = def.nextSceneKey; // safe at every commit: the chain test guarantees it's a built scene or 'MainMenu'
+    const promptText =
+      next === 'MainMenu'
+        ? 'PRESS ENTER — more levels coming soon!'
+        : `PRESS ENTER — onward to ${LEVELS[def.levelNumber].name}!`; // def.levelNumber indexes the NEXT level (arrays are 0-based); guarded by the ternary
+
     const prompt = this.add
-      .text(GAME_W / 2, 460, 'PRESS ENTER — Level 2 coming soon!', {
+      .text(GAME_W / 2, 460, promptText, {
         fontFamily: 'monospace',
         fontSize: '18px',
         color: '#eeeedd',
@@ -86,9 +94,34 @@ export class VictoryScene extends Phaser.Scene {
       tint: [0xffd700, 0xff8833, 0xffeeaa],
     });
 
-    this.input.keyboard!.on('keydown-ENTER', () => {
+    // One-shot advance shared by keyboard + gamepad
+    let started = false;
+    const go = () => {
+      if (started) return;
+      started = true;
       SynthAudio.uiSelect();
-      this.scene.start('MainMenu');
+      if (next !== 'MainMenu') gs.advanceLevel();
+      this.scene.start(next);
+    };
+    this.input.keyboard!.once('keydown-ENTER', go);
+
+    // Gamepad: edge-triggered — A may still be held from the boss fight, require a release first
+    let aWasUp = false;
+    const padCheck = this.time.addEvent({
+      delay: 80,
+      loop: true,
+      callback: () => {
+        const pad = this.input.gamepad?.getPad(0);
+        if (!pad) return;
+        if (!pad.A) {
+          aWasUp = true;
+          return;
+        }
+        if (aWasUp) {
+          padCheck.remove();
+          go();
+        }
+      },
     });
   }
 }
