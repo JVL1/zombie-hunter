@@ -110,12 +110,12 @@ export class MainMenuScene extends Phaser.Scene {
     });
 
     // Replay hint — only once at least one level has been cleared
-    if (GameState.getInstance().currentLevel > 1) {
+    if (GameState.getInstance().maxUnlockedLevel > 1) {
       this.add
         .text(
           GAME_W / 2,
           355,
-          `1-${Math.min(GameState.getInstance().currentLevel, LEVELS.length)}: replay a cleared level`,
+          `1-${Math.min(GameState.getInstance().maxUnlockedLevel, LEVELS.length)}: replay a cleared level`,
           {
             fontFamily: 'monospace',
             fontSize: '13px',
@@ -148,14 +148,13 @@ export class MainMenuScene extends Phaser.Scene {
     this.input.on('pointerdown', () => this.startGame());
 
     // Number keys replay cleared levels (kid-friendly: show friends Level 1 after beating it)
-    const keyNames = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'];
-    for (let n = 1; n <= LEVELS.length; n++) {
+    const keyNames = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE'];
+    for (let n = 1; n <= Math.min(LEVELS.length, keyNames.length); n++) {
       this.input.keyboard!.on(`keydown-${keyNames[n - 1]}`, () => {
         if (this.starting) return;
         const gs = GameState.getInstance();
-        if (n > gs.currentLevel) return; // locked
-        gs.currentLevel = n; // retry/GameOver routing follows the replayed level
-        gs.save();
+        if (n > gs.maxUnlockedLevel) return; // locked
+        gs.replayLevel(n); // moves currentLevel (so retry follows) without losing the unlock
         this.starting = true;
         SynthAudio.unlock();
         SynthAudio.uiSelect();

@@ -112,7 +112,12 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.zombies = this.add.group();
     // First zombie sits outside aggro+patrol reach of the spawn point
     for (const spawn of this.def.zombieSpawns) {
-      const y = spawn.y ?? WORLD.groundY - 56;
+      // Scaled bodies reach further below the sprite center than the default
+      // spawn height (tuned for scale 1) allows — lift them so no variant
+      // embeds more than the arcade-tolerated ~8px into the ground
+      const v = ZOMBIE.variants[spawn.variant];
+      const bodyBottomOffset = (v.base === 'urban' ? 64 : 48) * v.scale;
+      const y = spawn.y ?? WORLD.groundY - 56 - Math.max(0, bodyBottomOffset - 64);
       const zombie = new Zombie(this, spawn.x, y, spawn.variant);
       zombie.setTarget(this.player);
       zombie.setDepth(5);

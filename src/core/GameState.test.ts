@@ -26,6 +26,7 @@ beforeEach(() => {
   gs.keys = [false, false, false, false, false];
   gs.bestStreak = 0;
   gs.currentLevel = 1;
+  gs.maxUnlockedLevel = 1;
   gs.resetRun();
 });
 
@@ -128,6 +129,38 @@ describe('level progression', () => {
     const fresh = new (GameState as any)();
     fresh.load();
     expect(fresh.currentLevel).toBe(LEVELS.length);
+  });
+
+  it('advanceLevel raises the unlock high-water mark', () => {
+    gs.advanceLevel();
+    expect(gs.maxUnlockedLevel).toBe(gs.currentLevel);
+  });
+
+  it('replaying a lower level never lowers maxUnlockedLevel', () => {
+    gs.maxUnlockedLevel = LEVELS.length;
+    gs.replayLevel(1);
+    expect(gs.currentLevel).toBe(1);
+    expect(gs.maxUnlockedLevel).toBe(LEVELS.length);
+    const fresh = new (GameState as any)();
+    fresh.load();
+    expect(fresh.maxUnlockedLevel).toBe(LEVELS.length);
+    expect(fresh.currentLevel).toBe(1);
+  });
+
+  it('replayLevel cannot jump past the unlock', () => {
+    gs.maxUnlockedLevel = 1;
+    gs.replayLevel(99);
+    expect(gs.currentLevel).toBe(1);
+  });
+
+  it('legacy saves default maxUnlockedLevel to currentLevel', () => {
+    localStorage.setItem(
+      SAVE_KEY,
+      JSON.stringify({ coins: 0, keys: [false, false, false, false, false], bestStreak: 0, currentLevel: 1 })
+    );
+    const fresh = new (GameState as any)();
+    fresh.load();
+    expect(fresh.maxUnlockedLevel).toBe(fresh.currentLevel);
   });
 });
 

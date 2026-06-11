@@ -32,6 +32,7 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
   private lastJumpAttempt = 0;
   private nextGroanAt = 0;
   private dying = false;
+  private windupTween: Phaser.Tweens.Tween | null = null;
   private healthBar: Phaser.GameObjects.Rectangle | null = null;
   private healthBarBg: Phaser.GameObjects.Rectangle | null = null;
 
@@ -87,10 +88,13 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
     if (this.health > 0) {
       this.play(this.anims_.hurt, true);
       this.updateHealthBar();
-      // Getting hit interrupts a windup
+      // Getting hit interrupts a windup — kill the crouch tween too
       if (this.state_ === ZombieState.WINDUP) {
         this.state_ = ZombieState.RECOVER;
         this.stateUntil = this.scene.time.now + 300;
+        this.windupTween?.stop();
+        this.windupTween = null;
+        this.setScale(this.vdef.scale);
       }
     }
   }
@@ -200,13 +204,16 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
       this.setVelocityX(0);
       this.setFlipX(this.target.x < this.x);
       flashSprite(this, 0xff8866, ZOMBIE.lungeWindupMs - 60, this.vdef.tint);
-      this.scene.tweens.add({
+      this.windupTween = this.scene.tweens.add({
         targets: this,
         scaleY: this.vdef.scale * 0.92,
         scaleX: this.vdef.scale * 1.06,
         duration: ZOMBIE.lungeWindupMs - 60,
         yoyo: true,
-        onComplete: () => this.setScale(this.vdef.scale),
+        onComplete: () => {
+          this.windupTween = null;
+          this.setScale(this.vdef.scale);
+        },
       });
     } else {
       const dir = this.target.x < this.x ? -1 : 1;

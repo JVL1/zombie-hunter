@@ -8,6 +8,7 @@ interface SaveData {
   keys: boolean[];
   bestStreak: number;
   currentLevel: number;
+  maxUnlockedLevel: number;
 }
 
 // Run + persistent state. Coins/keys/best streak survive page reloads via localStorage.
@@ -20,7 +21,8 @@ export class GameState {
   keys: boolean[] = [false, false, false, false, false];
   currentSword = 'Rusty Blade';
   swordDamage = COMBAT.baseSwordDamage;
-  currentLevel = 1;
+  currentLevel = 1; // the level being played (replays move it back)
+  maxUnlockedLevel = 1; // unlock high-water mark — never decreases
 
   // Kill streak (combo meter)
   streak = 0;
@@ -58,6 +60,13 @@ export class GameState {
   // Level beaten: move to the next built level (sticks at the last one) and save.
   advanceLevel() {
     this.currentLevel = Math.min(this.currentLevel + 1, LEVELS.length);
+    this.maxUnlockedLevel = Math.max(this.maxUnlockedLevel, this.currentLevel);
+    this.save();
+  }
+
+  // Replay a cleared level without losing unlock progress.
+  replayLevel(n: number) {
+    this.currentLevel = Math.min(Math.max(n, 1), this.maxUnlockedLevel);
     this.save();
   }
 
@@ -82,6 +91,7 @@ export class GameState {
       keys: this.keys,
       bestStreak: this.bestStreak,
       currentLevel: this.currentLevel,
+      maxUnlockedLevel: this.maxUnlockedLevel,
     };
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -103,6 +113,10 @@ export class GameState {
       this.currentLevel = Number.isInteger(lvl)
         ? Math.min(Math.max(lvl as number, 1), LEVELS.length)
         : 1;
+      const maxLvl = (data as { maxUnlockedLevel?: unknown }).maxUnlockedLevel;
+      this.maxUnlockedLevel = Number.isInteger(maxLvl)
+        ? Math.min(Math.max(maxLvl as number, this.currentLevel), LEVELS.length)
+        : this.currentLevel;
     } catch {
       // Corrupt save — start fresh
     }
