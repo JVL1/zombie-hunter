@@ -67,6 +67,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.bgLayers = [];
     this.flickerLights = [];
     this.contactCooldown.clear();
+    this.lastBossHitTime = 0;
+    this.fogDriftMultiplier = 1;
+    this.bossHealthBar = null;
+    this.bossHealthBarBg = null;
+    this.bossNameText = null;
     this.gameState.resetRun();
 
     this.controls = new InputController(this);
@@ -82,7 +87,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
     this.physics.world.setBounds(0, 0, this.def.worldWidth, WORLD.height);
 
+    // The base owns the solids group and fog strips so terrain/backdrop
+    // overrides can't leave create()/update() dereferencing undefined state
+    this.solids = this.physics.add.staticGroup();
     this.buildBackdrop();
+    this.buildFog();
     this.buildTerrain();
     this.buildAmbience(isWebGL);
 
@@ -204,14 +213,13 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   protected buildBackdropBase() {
     this.add.image(0, 0, Assets.SKY).setOrigin(0).setScrollFactor(0).setDepth(-10);
 
-    const moonGlow = this.add
+    this.add
       .image(770, 95, Assets.GLOW)
       .setScrollFactor(0.04)
       .setDepth(-9.6)
       .setScale(4)
       .setTint(0xffbb88)
       .setAlpha(0.5);
-    void moonGlow;
     this.add.image(770, 95, Assets.MOON).setScrollFactor(0.04).setDepth(-9.5);
 
     const scale = GAME_H / 324;
@@ -228,6 +236,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       mkLayer(layer.key, layer.factor, -9 + i);
     });
 
+  }
+
+  // Screen-space fog is base-owned (created in create(), not in an
+  // overridable hook) — update() drifts it unconditionally every frame
+  private buildFog() {
     this.fogFar = this.add
       .tileSprite(0, GAME_H - 220, GAME_W, 80, Assets.FOG)
       .setOrigin(0)
@@ -245,8 +258,6 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   }
 
   protected buildTerrainBase() {
-    this.solids = this.physics.add.staticGroup();
-
     // Ground: two tile rows across the level
     for (let x = 0; x < this.def.worldWidth; x += 32) {
       lit(this.solids.create(x + 16, WORLD.groundY + 16, this.def.textures.groundTop).setDepth(3));
