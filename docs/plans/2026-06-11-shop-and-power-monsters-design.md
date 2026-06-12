@@ -42,6 +42,7 @@ Victory → ShopScene → next level
 - `VictoryScene` keeps its current order: call `gs.advanceLevel()` **first**, then `scene.start('Shop')` — but only when the level's `nextSceneKey !== 'MainMenu'`; after the final built level the shop is skipped. Because the save advances before the shop opens, quitting mid-shop is safe.
 - `ShopScene`'s "HEAD OUT →" starts `gs.currentLevelDef.sceneKey` (the already-advanced level).
 - `ShopScene` is registered in the scene array in `src/main.ts`.
+- VictoryScene's prompt copy changes when routing to the shop ("ENTER: visit the shop" instead of "onward to the next level").
 - GameOver/retry flow untouched. Replaying an earlier level and winning still routes through the shop, so the shop stays reachable after finishing the game.
 
 ### Scene: one hub, two counters
@@ -53,8 +54,8 @@ Victory → ShopScene → next level
 
 **Input (review finding — ↑ is a jump key, and InputController has no menu primitives):**
 
-- `InputController` gains edge-triggered menu navigation: `upJustPressed` / `downJustPressed` / `leftJustPressed` / `rightJustPressed` (keyboard cursors + WASD + gamepad d-pad/stick, using the existing `prevPad*` edge-detection pattern).
-- ←/→ switch counters, ↑/↓ select item, **attack button (A/J / gamepad X/B) buys**.
+- `InputController` gains edge-triggered menu navigation: `upJustPressed` / `downJustPressed` / `leftJustPressed` / `rightJustPressed` — **arrow keys + gamepad d-pad/stick only, NOT WASD** (A is the attack/buy key; including it in nav would switch counters and buy in one press — round-2 review finding), using the existing `prevPad*` edge-detection pattern.
+- ←/→ switch counters, ↑/↓ select item, **attack button (A/J/Enter / gamepad X/B) buys**.
 - **Exit only by selecting "HEAD OUT →" and pressing attack** (or Enter). Jump is NOT an exit — ↑ doubles as a jump key and would eject Henry from the shop. (Subjective watch item for Henry's first playtest: gamepad X/B = confirm inverts the usual A = confirm convention; revisit if he fumbles.)
 
 All textures procedural, in `src/art/shop.ts`. Purchases get juice: coin sound, float text, sword-gleam flash.
@@ -74,7 +75,7 @@ No new `src/shop.ts`. Sword tiers and consumable defs are exported constants in 
 | 4 | Giant Sun Splicer | 600 | 36 | +14 | 1.25× | blazing gold |
 
 - **Economy (review finding):** a clean Level 1 run currently yields ~40–55 coins (8 zombies × 5 + drops), so Tier 1 drops to 40 to make the first shop visit usable, and **bosses now burst 5 coins (+25) on death** — a fun reward that also funds the ladder. All numbers are starting points for playtest tuning with Henry. Giant Sun Splicer stays expensive: it's canonically required for the final boss.
-- **Swing speed mechanism (review finding):** while attacking, `sprite.anims.timeScale = speed` (sword overlay follows automatically — it syncs via `setFrame`), and `swingCooldownMs` / `finisherCooldownMs` are divided by `speed`. Both, or the stat does nothing.
+- **Swing speed mechanism (review finding):** while attacking, `sprite.anims.timeScale = speed` (sword overlay follows automatically — it syncs via `setFrame`), and `swingCooldownMs` / `finisherCooldownMs` are divided by `speed`. Both, or the stat does nothing. **Reset `anims.timeScale = 1` on attack-animation complete** — Phaser's timeScale persists across animations and would otherwise speed up walk/idle too (round-2 finding).
 - **Damage/reach integration:** `tryAttack` already reads `gs.swordDamage`; reach adds to `COMBAT.hitboxW`. `currentSword`/`swordDamage` become getters derived from `SWORDS[swordIndex]`.
 
 **Consumables** (carried into levels, shown in HUD):
@@ -92,8 +93,11 @@ No new `src/shop.ts`. Sword tiers and consumable defs are exported constants in 
 Shield, potion, and Extra Life all hook the same few lines in `Player.takeDamage`. That logic moves into a pure function in `src/core/damage.ts`:
 
 ```ts
-resolveDamage(state, amount) → { newState, outcome }
+resolveDamage(state, amount, invulnerable) → { newState, outcome }
 // outcome: 'ignored' | 'absorbed' | 'hurt' | 'potioned' | 'revived' | 'dead'
+// `invulnerable` is passed by the caller: i-frame timers (post-hit, dash,
+// post-revive) live in Player, not GameState, so the pure function takes
+// the already-resolved boolean (OR'd with the Invincibility buff).
 ```
 
 Ordering, explicitly:
@@ -114,7 +118,7 @@ A `scene.restart()` would wipe boss HP/state/minions and re-run `create()`. Inst
 
 - `BaseLevelScene`'s `'player-died'` handler checks the `resolveDamage` outcome — actually the intercept happens **before** `die()` plays: when `resolveDamage` returns `'revived'`, `Player` never enters `dying`.
 - New `Player.revive(x, y)`: resets velocity/animation/alpha, repositions, grants **~2 s invulnerability** (a boss mid-CHARGE or a zombie sitting on the spawn would otherwise chain-kill), camera snaps to the player. Active buffs are cleared.
-- Respawn position: **arena left edge** if the boss encounter has started (world bounds are already locked to x ≥ `arenaLeft`), else the level spawn point. The scene never stops, so boss/minion/gore state is preserved for free.
+- Respawn position (round-2 review finding — teleporting to the level start is a hidden mega-penalty): **truly in place** — the player's **last grounded position** (`Player` tracks it each frame the body touches the floor; it's always within current world bounds, including the arena lock, and never mid-air over a gap). During a boss fight that naturally lands near the arena's left half where the player last stood. The scene never stops, so boss/minion/gore state is preserved for free.
 - Consumed life is saved immediately.
 
 ### GameState / persistence
@@ -130,7 +134,7 @@ Four rare elite zombies, one per buff. Names are placeholders — **Henry has fi
 |---|---|---|---|
 | Vulture Zombie | winged silhouette, dark purple | **Flight** | Hold jump to jetpack upward, release to drift down (reduced gravity) |
 | Rage Zombie | glowing red, faster | **Mega Damage** | Sword damage ×2, bigger hit effects/shake |
-| Titan Zombie | huge, stone-grey | **Giant Mode** | Player visuals ×1.5, damage ×1.5 |
+| Titan Zombie | huge, stone-grey | **Giant Mode** | Player visuals ×1.35, damage ×1.5 |
 | Crystal Zombie | shimmering cyan | **Invincibility** | No damage taken, golden flashing aura |
 
 ### Monster plumbing (review consensus finding — variant table alone isn't enough)
@@ -141,7 +145,7 @@ Four rare elite zombies, one per buff. Names are placeholders — **Henry has fi
 
 ### Power orb & buff runtime
 
-- **Kill → power orb:** discriminated pickup spec — `{ kind: 'powerOrb', powerUp: PowerUpType }` (extends the current `'coin' | 'heart' | 'key'` union into a tagged shape). Distinct **baked** color/texture per buff (must read on Canvas), Light2D glow.
+- **Kill → power orb:** discriminated pickup spec — `{ kind: 'powerOrb', powerUp: PowerUpType }` (extends the current `'coin' | 'heart' | 'key'` union into a tagged shape). Distinct **baked** color/texture per buff (must read on Canvas), Light2D glow. **Boss-trigger interaction (round-2 finding):** when the boss encounter fires, any uncollected power orb is **magnetized to the player** (reuse the coin magnet path with unlimited range) before the bounds shrink — no orb is ever stranded behind `arenaLeft`, and flying loot into Henry's hands as the boss fight starts is a nice beat.
 - **Buff state lives in `GameState`** (review consensus): a non-persisted `activeBuffs: Map<PowerUpType, expiresAt>` with query helpers (`damageMultiplier()`, `isInvincible()`, `canFly()`, `visualScale()`). Cleared by `resetRun()` — which already runs on every level start — and on death/revive. HUD reads the singleton each frame exactly as it does today; Player queries the helpers. `PowerUpType` + per-buff config (duration, color, multiplier) live in `config.ts` (`POWERUPS`).
 - **Timers:** ~10 s per buff. Different buffs stack (Mega ×2 and Giant ×1.5 multiply to ×3 — intended, it's a kids' power fantasy); **collecting a duplicate buff refreshes its timer** rather than double-tracking (review finding). During the boss cinematic (~2.5 s, player frozen) all `expiresAt` values are extended by the cinematic duration — frozen players don't burn buff time.
 - HUD: a second row below the existing 246×74 panel — consumable icons+counts (potion/shield/life) on the left, active buff icons with countdown bars to their right.
@@ -150,7 +154,7 @@ Four rare elite zombies, one per buff. Names are placeholders — **Henry has fi
 
 - **Flight:** hold jump → vy clamped upward (jetpack), release → reduced-gravity drift. Respects world/camera bounds. **Boss-trigger check (review finding):** the boss encounter triggers on player x-position, not a finite overlap box — verify at implementation that a max-altitude player still trips it; if any progression trigger is a finite zone, stretch it full-height.
 - **Mega Damage:** `damageMultiplier()` folded into the existing attack payload; bigger Juice shake + hit FX.
-- **Giant Mode (review consensus — Arcade bodies DO scale with the sprite):** the zanter's documented 58×116 body proves `setScale` scales the body; a naive ×1.5 makes a 36×72 body that wedges under the test-enforced 56 px clearances. New `Player.setVisualScale(mult)`: `setScale(1.5)` then **re-set body size/offset back to the original 24×48-equivalent**, and scale the sword overlay (it syncs position/frame/flip but not scale).
+- **Giant Mode (review consensus — Arcade bodies DO scale with the sprite):** the zanter's documented 58×116 body proves `setScale` scales the body; a naive scale-up wedges the body under the test-enforced 56 px clearances. New `Player.setVisualScale(mult)`: `setScale(mult)` then **re-set body size/offset back to the original 24×48-equivalent**, and scale the sword overlay (it syncs position/frame/flip but not scale). **Visual/body desync is bounded deliberately (round-2 finding):** visuals are ×1.35 (≈65 px vs the 48 px body), the body offset keeps the **feet planted** so the overhang goes upward/outward where there's mostly sky, and the undersized hitbox is player-generous (enemies brushing the giant's silhouette don't hit — feels powerful, not broken). ×1.5+ visuals clipped ~24 px into ceilings and read as broken; ×1.35 for ~10 s is cartoon bulk.
 - **Invincibility:** `isInvincible()` is step 1 of `resolveDamage` — hits are `ignored`, golden flashing aura.
 
 ### Scope guards
@@ -173,4 +177,6 @@ Four rare elite zombies, one per buff. Names are placeholders — **Henry has fi
 
 ## Review record
 
-Round-1 multi-reviewer design review (Claude subagent + Codex MCP + Gemini CLI) returned 1 Critical (scene-restart revive — replaced with in-place revive), ~10 Majors (all spec gaps: input conflict, death-path intercept, damage ordering, buff ownership, variant sheet/anim plumbing, giant-mode body scaling, swing-speed mechanism, save clamping, config.ts data ownership, flight-vs-trigger), and assorted Minors — all folded into this revision. Subjective items kept as watch-list: gamepad confirm mapping, economy numbers (tune with Henry).
+Round-1 multi-reviewer design review (Claude subagent + Codex MCP + Gemini CLI) returned 1 Critical (scene-restart revive — replaced with in-place revive), ~10 Majors (all spec gaps: input conflict, death-path intercept, damage ordering, buff ownership, variant sheet/anim plumbing, giant-mode body scaling, swing-speed mechanism, save clamping, config.ts data ownership, flight-vs-trigger), and assorted Minors — all folded into the round-1 revision.
+
+Round 2 (all three re-dispatched, narrowed scope) verified every round-1 fix resolved and found 3 new Majors, folded into this revision: A-key nav/buy conflict (shop nav = arrows + d-pad only), Extra Life respawn = last grounded position (never the level start), Giant Mode visuals capped at ×1.35 with feet-planted offset. Minors folded: `anims.timeScale` reset after attack, Victory prompt copy, `resolveDamage` takes a caller-passed `invulnerable` flag, boss-trigger magnetizes stranded orbs. Converged: 0 critical, 0 major remaining. Subjective watch-list: gamepad X/B-confirm mapping, economy numbers (tune with Henry).
