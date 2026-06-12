@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { Assets, PlayerAnims } from '../assets';
-import { COMBAT, PLAYER } from '../config';
+import { COMBAT, PLAYER, SHOP } from '../config';
+import { resolveDamage } from '../core/damage';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
 import { SynthAudio } from '../core/SynthAudio';
-import { afterimage, dustPuff, flashSprite, lit } from '../fx/Effects';
+import { afterimage, dustPuff, flashSprite, floatText, lit } from '../fx/Effects';
 
 export interface AttackEvent {
   hitbox: Phaser.GameObjects.Rectangle;
@@ -47,10 +48,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // Damage state
   private invulnUntil = 0;
   private dying = false;
+  private lastGroundedPos: { x: number; y: number };
 
   constructor(scene: Phaser.Scene, x: number, y: number, input: InputController) {
     super(scene, x, y, Assets.PLAYER_SHEET, 0);
     this.controls = input;
+    this.lastGroundedPos = { x, y };
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -72,6 +75,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (scene.sys.renderer.type === Phaser.WEBGL) {
       this.lamp = scene.lights.addLight(x, y, 240, 0xffd9a0, 1.1);
+      const bladeTint = this.gameState.currentSword.bladeTint;
+      if (bladeTint) this.swordOverlay.setTint(bladeTint);
     }
   }
 
@@ -116,6 +121,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (grounded) {
       this.lastGroundedAt = now;
       this.jumpsLeft = PLAYER.maxJumps;
+      this.lastGroundedPos = { x: this.x, y: this.y };
     }
 
     // --- Dash ---
@@ -255,19 +261,26 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.gameState.swordDamage * COMBAT.comboMultipliers[this.comboStep - 1]
     );
 
+    const speed = this.gameState.currentSword.swingSpeed;
     this.attacking = true;
     SynthAudio.swing(this.comboStep);
     this.play(PlayerAnims.ATTACK.key, true);
+    this.anims.timeScale = speed;
     this.once(`animationcomplete-${PlayerAnims.ATTACK.key}`, () => {
+      this.anims.timeScale = 1;
       this.attacking = false;
       this.comboWindowUntil =
         this.scene.time.now + COMBAT.comboWindowMs;
       this.attackReadyAt =
-        this.scene.time.now + (isFinisher ? COMBAT.finisherCooldownMs : COMBAT.swingCooldownMs);
+        this.scene.time.now +
+        (isFinisher ? COMBAT.finisherCooldownMs : COMBAT.swingCooldownMs) / speed;
       if (isFinisher) this.comboStep = 0;
     });
 
-    const reach = COMBAT.hitboxW + (isFinisher ? COMBAT.finisherReachBonus : 0);
+    const reach =
+      COMBAT.hitboxW +
+      this.gameState.currentSword.reachBonus +
+      (isFinisher ? COMBAT.finisherReachBonus : 0);
     const offsetX = this.facing * (18 + reach / 2);
     const hitbox = this.scene.add.rectangle(this.x + offsetX, this.y, reach, COMBAT.hitboxH);
     hitbox.setVisible(false);
@@ -287,7 +300,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.attacking = true;
     SynthAudio.swing(2);
     this.play(PlayerAnims.ATTACK.key, true);
+    this.anims.timeScale = this.gameState.currentSword.swingSpeed;
     this.once(`animationcomplete-${PlayerAnims.ATTACK.key}`, () => {
+      this.anims.timeScale = 1;
       this.attacking = false;
     });
 
@@ -327,12 +342,47 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.endSlam();
   }
 
+  // NOTE: any future out-of-bounds kill volume (pits, crushers) must route
+  // through takeDamage — never call die() directly, or shields/potions/Extra
+  // Lives in the resolveDamage pipeline won't fire.
   takeDamage(amount: number, fromX: number) {
-    if (this.dying || this.isInvulnerable) return;
-    this.gameState.health -= amount;
+    if (this.dying) return;
+    const gs = this.gameState;
+    const { state, outcome } = resolveDamage(
+      {
+        health: gs.health,
+        maxHealth: gs.maxHealth,
+        potions: gs.potions,
+        shieldHits: gs.shieldHits,
+        lives: gs.lives,
+      },
+      amount,
+      this.isInvulnerable
+    );
+    if (outcome === 'ignored') return; // i-frames/dash: no knockback, no sound
+
+    gs.health = state.health;
+    gs.potions = state.potions;
+    gs.shieldHits = state.shieldHits;
+    gs.lives = state.lives;
+    const spentConsumable =
+      outcome === 'absorbed' || outcome === 'potioned' || outcome === 'revived';
+    if (spentConsumable) gs.save();
+
+    if (outcome === 'revived') {
+      SynthAudio.hurt();
+      this.revive();
+      return;
+    }
+
     this.invulnUntil = this.scene.time.now + PLAYER.hurtInvulnMs;
-    SynthAudio.hurt();
-    flashSprite(this, 0xff4444);
+    if (outcome === 'absorbed') {
+      SynthAudio.shield();
+      flashSprite(this, 0xffd700); // shield gold — no health (red) flash
+    } else {
+      SynthAudio.hurt();
+      flashSprite(this, 0xff4444);
+    }
 
     const dir = this.x < fromX ? -1 : 1;
     this.setVelocity(dir * PLAYER.contactKnockback, -180);
@@ -347,10 +397,38 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       onComplete: () => this.setAlpha(1),
     });
 
-    if (this.gameState.health <= 0) {
-      this.gameState.health = 0;
+    if (outcome === 'potioned') {
+      floatText(this.scene, this.x, this.y - 50, 'POTION!', '#ff6688', 14);
+    }
+
+    if (outcome === 'dead') {
       this.die();
     }
+  }
+
+  // Extra Life consumed: resolveDamage already restored health — reset the body
+  // and return to the last safe ground with a grace period.
+  revive() {
+    this.endSlam();
+    if (this.dashing) {
+      this.dashing = false;
+      (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(true);
+      this.setDragX(PLAYER.drag);
+      this.setMaxVelocity(PLAYER.maxRun, 900);
+      this.dashTrailEvent?.remove();
+      this.dashTrailEvent = null;
+    }
+    this.setAccelerationX(0);
+    this.setVelocity(0, 0);
+    this.setAlpha(1);
+    // Clamp to the CURRENT physics bounds — the boss arena may have shrunk the
+    // world since the player last stood on the ground.
+    const b = this.scene.physics.world.bounds;
+    const x = Phaser.Math.Clamp(this.lastGroundedPos.x, b.x + 30, b.right - 30);
+    this.setPosition(x, this.lastGroundedPos.y);
+    this.invulnUntil = this.scene.time.now + SHOP.reviveInvulnMs;
+    flashSprite(this, 0xffd700);
+    this.scene.events.emit('player-revived');
   }
 
   private die() {

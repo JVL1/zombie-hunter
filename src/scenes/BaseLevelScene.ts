@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Assets } from '../assets';
-import { BOSS, GAME_H, GAME_W, WORLD, ZOMBIE, ZombieVariant } from '../config';
+import { BOSS, GAME_H, GAME_W, SHOP, WORLD, ZOMBIE, ZombieVariant } from '../config';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
 import { Juice } from '../core/Juice';
@@ -603,6 +603,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.time.delayedCall(800, () => {
       this.pickups.add(new Pickup(this, bossX, bossY - 60, 'key'));
     });
+
+    // Boss bounty: a burst of coins around the corpse
+    for (let i = 0; i < SHOP.bossCoinBurst; i++) {
+      this.pickups.add(new Pickup(this, bossX + (i - 2) * 18, bossY - 40, 'coin'));
+    }
   }
 
   private onKeyCollected() {
