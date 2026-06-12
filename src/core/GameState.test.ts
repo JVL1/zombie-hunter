@@ -79,6 +79,80 @@ describe('health', () => {
   });
 });
 
+describe('power-up buffs', () => {
+  it('grantBuff activates a buff for its duration', () => {
+    const now = 1000;
+
+    gs.grantBuff('flight', now);
+
+    expect(gs.buffActive('flight', now + 5000)).toBe(true);
+    expect(gs.buffActive('flight', now + 10001)).toBe(false);
+  });
+
+  it('grantBuff refreshes duplicate grants instead of stacking', () => {
+    gs.grantBuff('flight', 0);
+    gs.grantBuff('flight', 8000);
+
+    expect(gs.buffActive('flight', 17000)).toBe(true);
+    expect(gs.buffActive('flight', 18001)).toBe(false);
+  });
+
+  it('damageMultiplier combines mega damage and giant buffs', () => {
+    expect(gs.damageMultiplier(0)).toBe(1);
+    gs.grantBuff('megaDamage', 0);
+    expect(gs.damageMultiplier(1)).toBe(2);
+    gs.grantBuff('giant', 0);
+    expect(gs.damageMultiplier(1)).toBe(3);
+  });
+
+  it('visualScale grows only while giant is active', () => {
+    expect(gs.visualScale(0)).toBe(1);
+    gs.grantBuff('giant', 0);
+    expect(gs.visualScale(1)).toBe(1.35);
+    expect(gs.visualScale(10001)).toBe(1);
+  });
+
+  it('reports invincible and flight helper states', () => {
+    expect(gs.isInvincible(0)).toBe(false);
+    expect(gs.canFly(0)).toBe(false);
+
+    gs.grantBuff('invincible', 0);
+    gs.grantBuff('flight', 0);
+
+    expect(gs.isInvincible(1)).toBe(true);
+    expect(gs.canFly(1)).toBe(true);
+    expect(gs.isInvincible(10001)).toBe(false);
+    expect(gs.canFly(10001)).toBe(false);
+  });
+
+  it('extendBuffs pushes every active expiry out for cinematic pauses', () => {
+    gs.grantBuff('flight', 0);
+    gs.grantBuff('giant', 1000);
+    gs.extendBuffs(2500);
+
+    expect(gs.buffActive('flight', 12000)).toBe(true);
+    expect(gs.buffActive('flight', 12501)).toBe(false);
+    expect(gs.buffActive('giant', 13499)).toBe(true);
+    expect(gs.buffActive('giant', 13501)).toBe(false);
+  });
+
+  it('resetRun clears runtime buffs', () => {
+    gs.grantBuff('flight', 0);
+    gs.resetRun();
+
+    expect(gs.buffActive('flight', 1)).toBe(false);
+    expect(gs.activeBuffs.size).toBe(0);
+  });
+
+  it('clearBuffs empties the active buff map', () => {
+    gs.grantBuff('flight', 0);
+    gs.grantBuff('megaDamage', 0);
+    gs.clearBuffs();
+
+    expect(gs.activeBuffs.size).toBe(0);
+  });
+});
+
 describe('keys', () => {
   it('collects keys into slots', () => {
     gs.collectKey(0);

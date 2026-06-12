@@ -84,6 +84,23 @@ export const SHOP = {
   bossCoinBurst: 5, // coins dropped when a boss dies (5 coins × coinValue 5 = +25)
 };
 
+export type PowerUpType = 'flight' | 'megaDamage' | 'giant' | 'invincible';
+
+export const POWERUPS: Record<PowerUpType, { name: string; durationMs: number; color: number }> = {
+  flight:     { name: 'FLIGHT',      durationMs: 10000, color: 0x8a5acc },
+  megaDamage: { name: 'MEGA DAMAGE', durationMs: 10000, color: 0xff3333 },
+  giant:      { name: 'GIANT MODE',  durationMs: 10000, color: 0x9a9a8c },
+  invincible: { name: 'INVINCIBLE',  durationMs: 10000, color: 0x55eedd },
+};
+
+export const BUFF = {
+  giantVisualScale: 1.35,
+  giantDamageMultiplier: 1.5,
+  megaDamageMultiplier: 2,
+  flightRiseVelocity: -260,
+  flightDriftGravityFactor: 0.35,
+};
+
 export const ZOMBIE = {
   aggroRange: 240,
   deaggroRange: 330,

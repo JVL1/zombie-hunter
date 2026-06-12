@@ -1,4 +1,14 @@
-import { COMBAT, CONSUMABLES, PLAYER, SHOP, SWORDS, type ConsumableKind } from '../config';
+import {
+  BUFF,
+  COMBAT,
+  CONSUMABLES,
+  PLAYER,
+  POWERUPS,
+  SHOP,
+  SWORDS,
+  type ConsumableKind,
+  type PowerUpType,
+} from '../config';
 import { LEVELS, levelByNumber, type LevelDef } from '../levels';
 
 const SAVE_KEY = 'zombie-hunters-save-v2';
@@ -29,6 +39,7 @@ export class GameState {
   lives = 0;
   currentLevel = 1; // the level being played (replays move it back)
   maxUnlockedLevel = 1; // unlock high-water mark — never decreases
+  activeBuffs = new Map<PowerUpType, number>();
 
   // Kill streak (combo meter)
   streak = 0;
@@ -52,6 +63,44 @@ export class GameState {
 
   currentStreak(now: number): number {
     return now < this.streakExpiresAt ? this.streak : 0;
+  }
+
+  grantBuff(type: PowerUpType, now: number) {
+    this.activeBuffs.set(type, now + POWERUPS[type].durationMs);
+  }
+
+  buffActive(type: PowerUpType, now: number): boolean {
+    const expiresAt = this.activeBuffs.get(type);
+    return expiresAt !== undefined && now < expiresAt;
+  }
+
+  damageMultiplier(now: number): number {
+    let multiplier = 1;
+    if (this.buffActive('megaDamage', now)) multiplier *= BUFF.megaDamageMultiplier;
+    if (this.buffActive('giant', now)) multiplier *= BUFF.giantDamageMultiplier;
+    return multiplier;
+  }
+
+  visualScale(now: number): number {
+    return this.buffActive('giant', now) ? BUFF.giantVisualScale : 1;
+  }
+
+  isInvincible(now: number): boolean {
+    return this.buffActive('invincible', now);
+  }
+
+  canFly(now: number): boolean {
+    return this.buffActive('flight', now);
+  }
+
+  extendBuffs(ms: number) {
+    for (const [type, expiresAt] of this.activeBuffs) {
+      this.activeBuffs.set(type, expiresAt + ms);
+    }
+  }
+
+  clearBuffs() {
+    this.activeBuffs.clear();
   }
 
   collectKey(index: number) {
@@ -146,6 +195,7 @@ export class GameState {
     this.health = this.maxHealth;
     this.streak = 0;
     this.streakExpiresAt = 0;
+    this.clearBuffs();
   }
 
   save() {
