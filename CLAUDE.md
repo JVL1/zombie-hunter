@@ -37,7 +37,8 @@ Victory advances along each level's `nextSceneKey`; GameOver retries `GameState.
 - **`src/core/`** — `InputController` (keyboard+gamepad, edge detection, jump buffering), `Juice` (hit-stop, shake, zoom punch, slow-mo), `SynthAudio` (ALL audio is WebAudio-synthesized — no audio files; call `unlock()` from a user gesture first), `GameState` (singleton; coins/keys/bestStreak persist via localStorage).
 - **`src/fx/`** — `Effects` (flashSprite, knockback, afterimage, shockwave, floatText, `lit()` Light2D helper), `Splatter` (GoreSystem: particle bursts + persistent blood decals on a world-sized RenderTexture).
 - **`src/entities/`** — `Player` (coyote time, jump buffer, double jump, dash with i-frames, 3-hit combo, air slam with pogo), `Zombie` (patrol/chase/telegraphed-lunge state machine + jump-fail comedy), `Boss` (SITTING→RISING→FIGHTING→CHARGE/LEAP→DEAD, enrages at 50% HP), `Pickups` (coin/heart/key, coins magnet to player).
-- **`src/scenes/`** — `PreloadScene` generates ALL non-sprite textures procedurally (sky, tiles, thrones, particles, decals; one `generate*Textures()` method per theme) and pre-bakes night tints onto the pale parallax layers (canvas-renderer-safe). `BaseLevelScene` owns all generic level logic (combat wiring, boss encounter incl. summons, pickups, parallax/fog, update loop) driven by a `LevelDef`; `Level1/2/3Scene` are thin theme subclasses overriding `buildBackdrop`/`buildTerrain`/`buildAmbience`.
+- **`src/art/`** — procedural texture packs: `helpers.ts` (`bakeTint` re-tints a single image, `bakeSheet` bakes a draw-callback over a spritesheet and registers numbered frames 0..n), `common.ts` (level-agnostic: sky/moon/pickups/particles/decals), plus one `{theme}.ts` per level theme (`city`, `forest`, `rail`), each exporting `generate{Theme}Textures(scene)`.
+- **`src/scenes/`** — `PreloadScene` loads sprites, registers animations, then invokes every `src/art/` generator and the `bakeTint` parallax re-tints from `create()` (defining without invoking = invisible textures; baking is canvas-renderer-safe). `BaseLevelScene` owns all generic level logic (combat wiring, boss encounter incl. summons, pickups, parallax/fog, update loop) driven by a `LevelDef`; `Level1/2/3Scene` are thin theme subclasses overriding `buildBackdrop`/`buildTerrain`/`buildAmbience`.
 
 ### Key Patterns
 
@@ -54,7 +55,7 @@ Arrows move, ↑/Space/W jump (double jump), A/J attack (3-hit combo; in air whi
 ### Adding a New Level
 
 1. Append a `LevelDef` to `LEVELS` in `src/levels.ts` and **flip the previous level's `nextSceneKey`** to the new scene key (the chain test enforces this pair of edits; the last built level points at `'MainMenu'`)
-2. Add theme textures: a `generate{Theme}Textures()` method in PreloadScene + `bakeTint` parallax re-tints, both invoked from `create()` (defining without invoking = invisible textures)
+2. Add theme textures: create `src/art/{theme}.ts` exporting `generate{Theme}Textures(scene)` + `bakeTint` parallax re-tints, both invoked from `PreloadScene.create()` (defining without invoking = invisible textures), and extend the export-shape test in `src/art/art.test.ts`
 3. Create `src/scenes/Level{N}Scene.ts` extending `BaseLevelScene` — `constructor() { super(levelByNumber(N)); }` plus `buildBackdrop`/`buildTerrain`/`buildAmbience` overrides for theme props only (geometry belongs in the def; use the optional per-spawn `y` for elevated spawns)
 4. Register it in `src/main.ts` scene array
 5. `npm test` — the layout invariants validate the new def automatically
