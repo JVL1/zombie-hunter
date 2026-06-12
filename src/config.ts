@@ -118,6 +118,7 @@ export const BUFF = {
   giantDamageMultiplier: 1.5,
   megaDamageMultiplier: 2,
   flightRiseVelocity: -260,
+  flightThrustRamp: 4, // accel toward the rise cap, in caps-per-second
   flightDriftGravityFactor: 0.35,
 };
 

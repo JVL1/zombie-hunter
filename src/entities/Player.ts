@@ -53,6 +53,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // Buff state
   private appliedVisualScale = 1;
   private invincibleTween: Phaser.Tweens.Tween | null = null;
+  private hurtBlinkTween: Phaser.Tweens.Tween | null = null;
   private aura: Phaser.GameObjects.Image | null = null;
   private auraColor: number | null = null;
 
@@ -178,19 +179,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const gs = this.gameState;
     if (gs.canFly(now) && !this.dashing) {
       const dt = this.scene.game.loop.delta;
-      if (!grounded && this.controls.jumpHeld) {
-        // Thrust toward a capped rise velocity — jetpack feel, no instant snap
+      // Thrust toward the rise cap — jetpack feel. Never touch an ascent
+      // already faster than the cap (fresh jump), or it would brake mid-jump.
+      if (!grounded && this.controls.jumpHeld && body.velocity.y > BUFF.flightRiseVelocity) {
         this.setVelocityY(
           Math.max(
-            body.velocity.y + BUFF.flightRiseVelocity * (dt / 1000) * 4,
+            body.velocity.y + BUFF.flightRiseVelocity * (dt / 1000) * BUFF.flightThrustRamp,
             BUFF.flightRiseVelocity
           )
         );
       }
-      // Gravity-reduced drift while falling; offsets world gravity (1000) down
-      // to flightDriftGravityFactor of normal
+      // Gravity-reduced drift while falling; offsets world gravity down to
+      // flightDriftGravityFactor of normal
       const drifting = !grounded && body.velocity.y > 0;
-      body.setGravityY(drifting ? -1000 * (1 - BUFF.flightDriftGravityFactor) : 0);
+      body.setGravityY(
+        drifting ? -this.scene.physics.world.gravity.y * (1 - BUFF.flightDriftGravityFactor) : 0
+      );
     } else if (body.gravity.y !== 0) {
       body.setGravityY(0); // buff ended (or dashing) — never leave the offset behind
     }
@@ -222,6 +226,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // --- Invincibility: golden alpha-pulse while active ---
     const invincible = gs.isInvincible(now);
     if (invincible && !this.invincibleTween) {
+      // A mid-flight hurt blink would feed the pulse a dimmed start alpha
+      if (this.hurtBlinkTween) {
+        this.hurtBlinkTween.stop();
+        this.hurtBlinkTween = null;
+        this.setAlpha(1);
+      }
       this.invincibleTween = this.scene.tweens.add({
         targets: this,
         alpha: 0.55,
@@ -493,13 +503,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setVelocity(dir * PLAYER.contactKnockback, -180);
 
     // Invulnerability blink
-    this.scene.tweens.add({
+    this.hurtBlinkTween?.stop();
+    this.hurtBlinkTween = this.scene.tweens.add({
       targets: this,
       alpha: 0.3,
       duration: 90,
       yoyo: true,
       repeat: Math.floor(PLAYER.hurtInvulnMs / 180),
-      onComplete: () => this.setAlpha(1),
+      onComplete: () => {
+        this.setAlpha(1);
+        this.hurtBlinkTween = null;
+      },
     });
 
     if (outcome === 'potioned') {
@@ -530,6 +544,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setAccelerationX(0);
     this.setVelocity(0, 0);
     this.setAlpha(1);
+    // Giant scale/body must reset NOW, not next update — the bounds clamp
+    // below positions the body at its revive size
+    if (this.appliedVisualScale !== 1) {
+      this.appliedVisualScale = 1;
+      this.setScale(1);
+      const rb = this.body as Phaser.Physics.Arcade.Body;
+      rb.setSize(24, 48);
+      rb.setOffset(28, 16);
+    }
     // Clamp to the CURRENT physics bounds — the boss arena may have shrunk the
     // world since the player last stood on the ground.
     const b = this.scene.physics.world.bounds;
