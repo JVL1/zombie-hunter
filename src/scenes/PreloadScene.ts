@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { bakeTint } from '../art/helpers';
 import { Assets, PlayerAnims } from '../assets';
 import { GAME_H, GAME_W } from '../config';
 
@@ -71,36 +72,20 @@ export class PreloadScene extends Phaser.Scene {
     this.generateRailTextures();
     // Pre-tint the pale ruin layers into a night palette (runtime tint on
     // TileSprites is WebGL-only; baking it works on the canvas fallback too)
-    this.bakeTint(Assets.RUIN_BG_2, Assets.RUIN_NIGHT_FAR, '#52527e');
-    this.bakeTint(Assets.RUIN_BG_3, Assets.RUIN_NIGHT_MID, '#3c3c66');
-    this.bakeTint(Assets.RUIN_BG_4, Assets.RUIN_NIGHT_NEAR, '#2a2a4c');
+    bakeTint(this, Assets.RUIN_BG_2, Assets.RUIN_NIGHT_FAR, '#52527e');
+    bakeTint(this, Assets.RUIN_BG_3, Assets.RUIN_NIGHT_MID, '#3c3c66');
+    bakeTint(this, Assets.RUIN_BG_4, Assets.RUIN_NIGHT_NEAR, '#2a2a4c');
     // Level 2: same ruin layers re-baked into a mossy palette — reads as a
     // decayed forest swallowing the city
-    this.bakeTint(Assets.RUIN_BG_2, Assets.FOREST_NIGHT_FAR, '#3d5240');
-    this.bakeTint(Assets.RUIN_BG_3, Assets.FOREST_NIGHT_MID, '#2e4231');
-    this.bakeTint(Assets.RUIN_BG_4, Assets.FOREST_NIGHT_NEAR, '#1f3023');
+    bakeTint(this, Assets.RUIN_BG_2, Assets.FOREST_NIGHT_FAR, '#3d5240');
+    bakeTint(this, Assets.RUIN_BG_3, Assets.FOREST_NIGHT_MID, '#2e4231');
+    bakeTint(this, Assets.RUIN_BG_4, Assets.FOREST_NIGHT_NEAR, '#1f3023');
     // Level 3: same ruin layers re-baked into a rusty dusk palette for the
     // rotten railroad
-    this.bakeTint(Assets.RUIN_BG_2, Assets.RAIL_NIGHT_FAR, '#5c4a3a');
-    this.bakeTint(Assets.RUIN_BG_3, Assets.RAIL_NIGHT_MID, '#43352a');
-    this.bakeTint(Assets.RUIN_BG_4, Assets.RAIL_NIGHT_NEAR, '#2e241c');
+    bakeTint(this, Assets.RUIN_BG_2, Assets.RAIL_NIGHT_FAR, '#5c4a3a');
+    bakeTint(this, Assets.RUIN_BG_3, Assets.RAIL_NIGHT_MID, '#43352a');
+    bakeTint(this, Assets.RUIN_BG_4, Assets.RAIL_NIGHT_NEAR, '#2e241c');
     this.scene.start('MainMenu');
-  }
-
-  private bakeTint(srcKey: string, destKey: string, tint: string) {
-    const src = this.textures.get(srcKey).getSourceImage() as HTMLImageElement;
-    const canvas = this.textures.createCanvas(destKey, src.width, src.height);
-    if (!canvas) return;
-    const ctx = canvas.getContext();
-    ctx.drawImage(src, 0, 0);
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = tint;
-    ctx.fillRect(0, 0, src.width, src.height);
-    // Multiply fills transparent areas too — clip back to the original silhouette
-    ctx.globalCompositeOperation = 'destination-in';
-    ctx.drawImage(src, 0, 0);
-    ctx.globalCompositeOperation = 'source-over';
-    canvas.refresh();
   }
 
   private createAnimations() {
