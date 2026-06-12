@@ -29,6 +29,7 @@ export function bakeSheet(
   frameHeight: number,
   draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
 ): void {
+  if (!scene.textures.exists(srcKey)) return;
   const src = scene.textures.get(srcKey).getSourceImage() as SheetSource;
   const output = document.createElement('canvas');
   output.width = src.width;
@@ -43,17 +44,12 @@ export function bakeSheet(
   if (!canvas) return;
   canvas.refresh();
 
-  const tex = scene.textures.get(destKey);
   const cols = Math.floor(src.width / frameWidth);
   const rows = Math.floor(src.height / frameHeight);
   let idx = 0;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      if (tex.has(String(idx))) {
-        idx++;
-        continue;
-      }
-      tex.add(idx++, 0, c * frameWidth, r * frameHeight, frameWidth, frameHeight);
+      canvas.add(idx++, 0, c * frameWidth, r * frameHeight, frameWidth, frameHeight);
     }
   }
 }
