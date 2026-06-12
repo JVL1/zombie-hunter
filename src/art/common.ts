@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
-import { Assets } from '../assets';
-import { GAME_H, GAME_W, POWERUPS } from '../config';
+import { Assets, OrbTextures } from '../assets';
+import { GAME_H, GAME_W, POWERUPS, type PowerUpType } from '../config';
 
 export function generateCommonTextures(scene: Phaser.Scene): void {
   const g = scene.make.graphics({ x: 0, y: 0 }, false);
@@ -73,14 +73,9 @@ export function generateCommonTextures(scene: Phaser.Scene): void {
   g.clear();
 
   // --- Power orbs (baked per-buff colors; Canvas ignores runtime tint) ---
-  const orbKeys = {
-    flight: Assets.ORB_FLIGHT,
-    megaDamage: Assets.ORB_MEGA_DAMAGE,
-    giant: Assets.ORB_GIANT,
-    invincible: Assets.ORB_INVINCIBLE,
-  } as const;
-  for (const [type, def] of Object.entries(POWERUPS)) {
-    const key = orbKeys[type as keyof typeof orbKeys];
+  for (const type of Object.keys(POWERUPS) as PowerUpType[]) {
+    const def = POWERUPS[type];
+    const key = OrbTextures[type];
     for (let r = 8; r >= 5; r--) {
       g.fillStyle(def.color, 0.12);
       g.fillCircle(8, 8, r);

@@ -1,18 +1,11 @@
 import Phaser from 'phaser';
-import { Assets } from '../assets';
+import { Assets, OrbTextures } from '../assets';
 import { POWERUPS, PowerUpType } from '../config';
 import { GameState } from '../core/GameState';
 import { SynthAudio } from '../core/SynthAudio';
 import { floatText, lit } from '../fx/Effects';
 
 export type PickupKind = 'coin' | 'heart' | 'key' | 'orb';
-
-const ORB_TEXTURES: Record<PowerUpType, string> = {
-  flight: Assets.ORB_FLIGHT,
-  megaDamage: Assets.ORB_MEGA_DAMAGE,
-  giant: Assets.ORB_GIANT,
-  invincible: Assets.ORB_INVINCIBLE,
-};
 
 // Coins/hearts/keys/orbs dropped into the world. Coins magnet to the player when close.
 export class Pickup extends Phaser.Physics.Arcade.Sprite {
@@ -36,7 +29,7 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
           ? Assets.HEART
           : kind === 'key'
             ? Assets.KEY
-            : ORB_TEXTURES[powerUp!];
+            : OrbTextures[powerUp!];
     super(scene, x, y, tex);
     this.kind = kind;
     this.powerUp = powerUp;
@@ -74,9 +67,13 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
     if ((kind === 'key' || kind === 'orb') && scene.sys.renderer.type === Phaser.WEBGL) {
       const color = kind === 'orb' && powerUp ? POWERUPS[powerUp].color : 0xffdd66;
       const light = scene.lights.addLight(x, y, 140, color, 1.2);
-      this.on('destroy', () => scene.lights.removeLight(light));
-      scene.events.on('update', () => {
+      const follow = () => {
         if (this.active) light.setPosition(this.x, this.y);
+      };
+      scene.events.on('update', follow);
+      this.once('destroy', () => {
+        scene.events.off('update', follow);
+        scene.lights.removeLight(light);
       });
     }
   }

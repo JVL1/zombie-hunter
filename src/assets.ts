@@ -1,5 +1,7 @@
 // Centralized asset keys — single source of truth.
 
+import type { PowerUpType } from './config';
+
 export const Assets = {
   // Player (single 800x448 sheet, 80x64 frames, 10 cols x 7 rows)
   PLAYER_SHEET: 'player-sheet',
@@ -94,6 +96,15 @@ export const Assets = {
   SHOP_ICON_SHIELD: 'gen-shop-icon-shield',
   SHOP_ICON_LIFE: 'gen-shop-icon-life',
 } as const;
+
+// Per-buff baked orb textures — keyed by PowerUpType so adding a powerup
+// without an orb texture fails the typecheck here (and only here).
+export const OrbTextures: Record<PowerUpType, string> = {
+  flight: Assets.ORB_FLIGHT,
+  megaDamage: Assets.ORB_MEGA_DAMAGE,
+  giant: Assets.ORB_GIANT,
+  invincible: Assets.ORB_INVINCIBLE,
+};
 
 // Player sheet rows (10 cols): 0 idle(5) 1 walk(8) 2 run(8) 3 jump(4) 4 fall(4) 5 attack(6) 6 death(10)
 export const PlayerAnims = {
