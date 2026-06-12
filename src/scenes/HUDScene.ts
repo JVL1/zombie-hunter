@@ -133,16 +133,16 @@ export class HUDScene extends Phaser.Scene {
 
     this.gameState.keys.forEach((has, i) => this.keyIcons[i].setVisible(has));
 
-    const consumableCounts = [
+    const currentCounts = [
       this.gameState.potions,
       this.gameState.shieldHits,
       this.gameState.lives,
     ];
-    if (!this.consumablesShown && consumableCounts.some((count) => count > 0)) {
+    if (!this.consumablesShown && currentCounts.some((count) => count > 0)) {
       this.consumablesShown = true;
       this.consumableRow.setVisible(true);
     }
-    consumableCounts.forEach((count, i) => {
+    currentCounts.forEach((count, i) => {
       if (count !== this.lastConsumableCounts[i]) {
         this.consumableCounts[i].setText(`${count}`);
         this.lastConsumableCounts[i] = count;

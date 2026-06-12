@@ -86,7 +86,33 @@ describe('power-up buffs', () => {
     gs.grantBuff('flight', now);
 
     expect(gs.buffActive('flight', now + 5000)).toBe(true);
+    expect(gs.buffActive('flight', now + 10000)).toBe(false); // strict: dead at exact expiry
     expect(gs.buffActive('flight', now + 10001)).toBe(false);
+  });
+
+  it('grantBuff never shortens a cinematic-extended expiry', () => {
+    gs.grantBuff('flight', 0);
+    gs.extendBuffs(8000, 1000); // expiry now 18000
+    gs.grantBuff('flight', 5000); // fresh orb would only reach 15000
+
+    expect(gs.buffActive('flight', 17999)).toBe(true);
+    expect(gs.buffActive('flight', 18000)).toBe(false);
+  });
+
+  it('checking an expired buff prunes it from the map', () => {
+    gs.grantBuff('flight', 0);
+
+    expect(gs.buffActive('flight', 10000)).toBe(false);
+    expect(gs.activeBuffs.size).toBe(0);
+  });
+
+  it('activeBuffList returns only live buffs', () => {
+    gs.grantBuff('flight', 0);
+    gs.grantBuff('giant', 5000);
+
+    const list = gs.activeBuffList(12000); // flight expired, giant live
+    expect(list).toEqual([{ type: 'giant', expiresAt: 15000 }]);
+    expect(gs.activeBuffs.size).toBe(1);
   });
 
   it('grantBuff refreshes duplicate grants instead of stacking', () => {
@@ -128,12 +154,20 @@ describe('power-up buffs', () => {
   it('extendBuffs pushes every active expiry out for cinematic pauses', () => {
     gs.grantBuff('flight', 0);
     gs.grantBuff('giant', 1000);
-    gs.extendBuffs(2500);
+    gs.extendBuffs(2500, 2000);
 
     expect(gs.buffActive('flight', 12000)).toBe(true);
     expect(gs.buffActive('flight', 12501)).toBe(false);
     expect(gs.buffActive('giant', 13499)).toBe(true);
     expect(gs.buffActive('giant', 13501)).toBe(false);
+  });
+
+  it('extendBuffs drops expired entries instead of resurrecting them', () => {
+    gs.grantBuff('flight', 0);
+    gs.extendBuffs(60000, 11000); // flight already expired at 10000
+
+    expect(gs.buffActive('flight', 11001)).toBe(false);
+    expect(gs.activeBuffs.size).toBe(0);
   });
 
   it('resetRun clears runtime buffs', () => {

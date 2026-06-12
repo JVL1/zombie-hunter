@@ -66,12 +66,30 @@ export class GameState {
   }
 
   grantBuff(type: PowerUpType, now: number) {
-    this.activeBuffs.set(type, now + POWERUPS[type].durationMs);
+    // Refresh, never shorten: a cinematic pause may have pushed the current
+    // expiry past the default duration — a fresh orb must not nerf it.
+    const current = this.activeBuffs.get(type) ?? 0;
+    this.activeBuffs.set(type, Math.max(current, now + POWERUPS[type].durationMs));
   }
 
   buffActive(type: PowerUpType, now: number): boolean {
     const expiresAt = this.activeBuffs.get(type);
-    return expiresAt !== undefined && now < expiresAt;
+    if (expiresAt === undefined) return false;
+    if (now >= expiresAt) {
+      this.activeBuffs.delete(type); // lazy-prune so expired entries never linger
+      return false;
+    }
+    return true;
+  }
+
+  // Expired-filtered view for HUD countdowns — consumers never re-implement
+  // the expiry check.
+  activeBuffList(now: number): { type: PowerUpType; expiresAt: number }[] {
+    const list: { type: PowerUpType; expiresAt: number }[] = [];
+    for (const [type, expiresAt] of this.activeBuffs) {
+      if (this.buffActive(type, now)) list.push({ type, expiresAt });
+    }
+    return list;
   }
 
   damageMultiplier(now: number): number {
@@ -93,9 +111,15 @@ export class GameState {
     return this.buffActive('flight', now);
   }
 
-  extendBuffs(ms: number) {
+  // Slide every ACTIVE expiry forward (cinematic pause). Expired entries are
+  // dropped, never resurrected.
+  extendBuffs(ms: number, now: number) {
     for (const [type, expiresAt] of this.activeBuffs) {
-      this.activeBuffs.set(type, expiresAt + ms);
+      if (now >= expiresAt) {
+        this.activeBuffs.delete(type);
+      } else {
+        this.activeBuffs.set(type, expiresAt + ms);
+      }
     }
   }
 
