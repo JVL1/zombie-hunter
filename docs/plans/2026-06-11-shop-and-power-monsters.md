@@ -17,6 +17,37 @@
 - Physics world bounds and camera bounds are set separately; boss arena locks bounds to x≥`arenaLeft`.
 
 > **Note:** After saving, this plan will be pushed to Linear. Each task heading will be annotated with `<!-- TEAM-XX -->` linking to the corresponding Linear sub-issue.
+> *(Superseded: this repo is deliberately not Linear-tracked — plans live in docs/plans only.)*
+
+---
+
+## Session checkpoint — 2026-06-12
+
+**DONE: Tasks 0-13** (executed via executing-plans, subagent mode; every task/batch passed a 3-model review — Claude + Gemini + Codex — converging round 1 each time; 0 critical / 0 major remaining anywhere). Worktree `.claude/worktrees/shop-and-power-monsters`, branch `feat/shop-and-power-monsters`, 20 commits, 97 vitest passing, tsc clean.
+
+- Task 0 `7a56f10` (+ `.claude/worktrees/` gitignored on main `abff5e7`; AGENTS.md pointer added for Codex)
+- Tasks 1-3 `01d5ba5`/`aa3eda1`/`74475f5` + review `310c9bd` — src/art extraction, byte-verified verbatim
+- Task 4 `5703ef6` — Levels 1-3 playtested identical (headless + headed WebGL)
+- Tasks 5/6/7/9 `24a3dd3`/`216d224`/`ef20e51`/`24cb9f9` + review `9e189ab`
+- Task 8 `df7e978` + review `da026a1` — revive/damage pipeline live-QA'd (shield, auto-potion, in-place revive, GameOver)
+- Task 10 `7d817e4` + review `db6fcfc` — shop playtested incl. persistence + nav edge cases
+- Tasks 11/12 `bccd1bc`/`119893c` + review `f3250fd` — HUD latch QA'd live
+- Task 13 `0f8646d` + review `76f954f` — all 4 power monsters spawn + animate, baked colors readable on Canvas
+
+**REMAINING: Tasks 14-18** (orbs → buff effects → spawns → HUD countdowns → integration playtest).
+
+**Review-fix API changes the remaining tasks MUST honor (specs below are stale where they conflict):**
+- `GameState.extendBuffs(ms, now)` — now takes `now` and DROPS expired entries (Task 15's cinematic call is `this.gameState.extendBuffs(delta, this.time.now)`).
+- `GameState.activeBuffList(now): {type, expiresAt}[]` — expired-filtered view; Task 17's HUD MUST use this, never iterate `activeBuffs` raw.
+- `grantBuff` refreshes via `Math.max` — a fresh orb never shortens a cinematic-extended expiry; `buffActive` lazy-prunes expired entries.
+- `GameState.consumableState(kind)` → `{owned, cap, atCap}` — single source of truth for shop/HUD inventory display.
+- `ZombieVariantDef.bakeColor` (config.ts) holds the baked multiply-tint (NOT `tint`, which would double-tint on WebGL); `bakedVariantEntries()` in src/art/powerMonsters.ts is the single predicate for bake+anim passes.
+- pm-* anims derive frames/rate/repeat from the REGISTERED base anims at runtime — no hand-copied table; registration must stay after `createAnimations()` + `generatePowerMonsterSheets()`.
+- InputController filters ENTER OS key-repeat from `confirmJustPressed`; ShopScene also keeps a 300ms `INPUT_GRACE_MS`.
+- `Player.revive()` exists (resets attacking/timeScale/dash/slam, clamps to current physics bounds); Task 15 item 7 adds `clearBuffs()` there.
+- Boss coin burst centers via `(i - (SHOP.bossCoinBurst - 1) / 2)`.
+
+**Known-deferred items:** rage glow reads as a flat wash + overlay bobbing slide (assess in Task 18 headed playtest); CLAUDE.md scene-flow/"intentionally shopless" bullets stale (Task 18 owns the update); `coins`/`bestStreak` unclamped in `load()` (pre-existing, surfaced); `resolveDamage` heals on negative amount (no live caller passes ≤0).
 
 ---
 
