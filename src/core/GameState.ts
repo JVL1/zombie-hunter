@@ -84,6 +84,18 @@ export class GameState {
     return true;
   }
 
+  // Single source of truth for shop/HUD inventory display: how many of a
+  // consumable the player owns and whether more can be bought. Shield is
+  // special — it is "owned" while any charge remains and rebuyable only at 0.
+  consumableState(kind: ConsumableKind): { owned: number; cap: number; atCap: boolean } {
+    const cap = CONSUMABLES[kind].cap;
+    if (kind === 'shield') {
+      return { owned: this.shieldHits > 0 ? 1 : 0, cap, atCap: this.shieldHits !== 0 };
+    }
+    const owned = kind === 'potion' ? this.potions : this.lives;
+    return { owned, cap, atCap: owned >= cap };
+  }
+
   buyConsumable(kind: ConsumableKind): boolean {
     const item = CONSUMABLES[kind];
     if (this.coins < item.cost) return false;

@@ -196,6 +196,24 @@ describe('level progression', () => {
   });
 });
 
+describe('consumableState', () => {
+  it('reports owned/cap/atCap for count-based consumables', () => {
+    gs.potions = 2;
+    expect(gs.consumableState('potion')).toEqual({ owned: 2, cap: 3, atCap: false });
+    gs.potions = 3;
+    expect(gs.consumableState('potion')).toEqual({ owned: 3, cap: 3, atCap: true });
+    gs.lives = 0;
+    expect(gs.consumableState('life')).toEqual({ owned: 0, cap: 2, atCap: false });
+  });
+
+  it('treats shield as owned while any charge remains', () => {
+    gs.shieldHits = 0;
+    expect(gs.consumableState('shield')).toEqual({ owned: 0, cap: 1, atCap: false });
+    gs.shieldHits = 2;
+    expect(gs.consumableState('shield')).toEqual({ owned: 1, cap: 1, atCap: true });
+  });
+});
+
 describe('shop purchases', () => {
   it('buySword upgrades when coins cover the next tier and persists', () => {
     gs.coins = SWORDS[1].cost;

@@ -63,7 +63,12 @@ export class InputController {
     const aJustDown = Phaser.Input.Keyboard.JustDown(this.keyA);
     const jJustDown = Phaser.Input.Keyboard.JustDown(this.keyJ);
     const shiftJustDown = Phaser.Input.Keyboard.JustDown(this.cursors.shift);
-    const enterJustDown = Phaser.Input.Keyboard.JustDown(this.keyEnter);
+    // Filter OS key-repeat: a held ENTER carried into a new scene re-arms
+    // JustDown on its first auto-repeat event (Phaser's Key.onDown has no
+    // repeat guard), which would fire a phantom confirm in the shop.
+    const enterJustDown =
+      Phaser.Input.Keyboard.JustDown(this.keyEnter) &&
+      !(this.keyEnter.originalEvent as KeyboardEvent | undefined)?.repeat;
 
     const padX = this.pad ? this.pad.leftStick.x : 0;
     const padY = this.pad ? this.pad.leftStick.y : 0;

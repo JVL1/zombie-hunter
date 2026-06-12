@@ -18,6 +18,9 @@ const ROWS_TOP = 240;
 const SWORD_ROW_H = 34;
 const CONSUMABLE_ROW_H = 46;
 const HEAD_OUT_Y = 478;
+// Swallow confirm presses carried over from the Victory screen (defense in
+// depth — InputController also filters OS key-repeat events for ENTER).
+const INPUT_GRACE_MS = 300;
 const CONSUMABLE_KINDS: ConsumableKind[] = ['potion', 'shield', 'life'];
 const CONSUMABLE_ICONS: Record<ConsumableKind, string> = {
   potion: Assets.SHOP_ICON_POTION,
@@ -46,6 +49,7 @@ export class ShopScene extends Phaser.Scene {
     const gs = GameState.getInstance();
     this.exiting = false;
     this.focus = 0;
+    this.titles = [];
     // Open on the next buyable sword; if all owned this lands on HEAD OUT
     this.sel = Math.min(gs.swordIndex + 1, SWORDS.length);
     this.openedAt = this.time.now;
@@ -142,9 +146,11 @@ export class ShopScene extends Phaser.Scene {
     const c = this.controls;
 
     if (c.leftJustPressed || c.rightJustPressed) {
+      // The lists differ in length, so remap explicitly: HEAD OUT stays on
+      // HEAD OUT, item rows clamp to the new list's last item row.
+      const wasHeadOut = this.isHeadOut();
       this.focus = this.focus === 0 ? 1 : 0;
-      // Clamping maps HEAD OUT to HEAD OUT (it's the last item of both lists)
-      this.sel = Math.min(this.sel, this.listLen() - 1);
+      this.sel = wasHeadOut ? this.listLen() - 1 : Math.min(this.sel, this.listLen() - 2);
       SynthAudio.uiSelect();
       this.refresh();
     }
@@ -158,8 +164,7 @@ export class ShopScene extends Phaser.Scene {
       SynthAudio.uiSelect();
       this.refresh();
     }
-    // Grace window: ENTER/A may still be held from the Victory screen
-    if (c.confirmJustPressed && this.time.now - this.openedAt > 300) {
+    if (c.confirmJustPressed && this.time.now - this.openedAt > INPUT_GRACE_MS) {
       this.confirm();
     }
   }
@@ -201,13 +206,8 @@ export class ShopScene extends Phaser.Scene {
       }
     } else {
       const kind = CONSUMABLE_KINDS[this.sel];
-      const item = CONSUMABLES[kind];
-      cost = item.cost;
-      const atCap =
-        kind === 'shield'
-          ? gs.shieldHits !== 0
-          : (kind === 'potion' ? gs.potions : gs.lives) >= item.cap;
-      if (atCap) {
+      cost = CONSUMABLES[kind].cost;
+      if (gs.consumableState(kind).atCap) {
         failReason = kind === 'shield' ? 'shield still active!' : 'full!';
       } else {
         ok = gs.buyConsumable(kind);
@@ -228,8 +228,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   private rowFlash(x: number, y: number, color: number) {
-    const w = this.isHeadOut() ? 320 : PANEL_W;
-    const r = this.add.rectangle(x, y, w, 30, color, 0.4).setDepth(25);
+    const r = this.add.rectangle(x, y, PANEL_W, 30, color, 0.4).setDepth(25);
     this.tweens.add({ targets: r, alpha: 0, duration: 240, onComplete: () => r.destroy() });
   }
 
@@ -263,10 +262,9 @@ export class ShopScene extends Phaser.Scene {
 
     CONSUMABLE_KINDS.forEach((kind, i) => {
       const item = CONSUMABLES[kind];
-      const owned = kind === 'potion' ? gs.potions : kind === 'life' ? gs.lives : gs.shieldHits > 0 ? 1 : 0;
-      const atCap = kind === 'shield' ? gs.shieldHits !== 0 : owned >= item.cap;
+      const { owned, cap, atCap } = gs.consumableState(kind);
       const row = this.consumableRows[i];
-      row.setText(`${item.name}  ${owned}/${item.cap} — ${item.cost}c`);
+      row.setText(`${item.name}  ${owned}/${cap} — ${item.cost}c`);
       row.setColor(atCap ? '#7fd16a' : gs.coins >= item.cost ? '#ddddcc' : '#888899');
     });
 
