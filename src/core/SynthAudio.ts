@@ -136,6 +136,12 @@ class SynthAudioImpl {
     this.osc('sawtooth', 320, 90, 0.25, 0.45);
   }
 
+  shield() {
+    // Metallic deflect ting — a hit absorbed instead of taken
+    this.osc('triangle', 880, 660, 0.12, 0.3);
+    this.osc('triangle', 1320, 990, 0.16, 0.2, 0.04);
+  }
+
   groan(pitch = 1) {
     if (!this.ctx) return;
     const f = 75 * pitch;

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { COMBAT, PLAYER, WORLD, ZOMBIE } from '../config';
+import { COMBAT, CONSUMABLES, PLAYER, SHOP, SWORDS, WORLD, ZOMBIE } from '../config';
 import { LEVELS } from '../levels';
 import { GameState } from './GameState';
 
@@ -27,6 +27,10 @@ beforeEach(() => {
   gs.bestStreak = 0;
   gs.currentLevel = 1;
   gs.maxUnlockedLevel = 1;
+  gs.swordIndex = 0;
+  gs.potions = 0;
+  gs.shieldHits = 0;
+  gs.lives = 0;
   gs.resetRun();
 });
 
@@ -72,6 +76,114 @@ describe('health', () => {
     expect(gs.health).toBe(gs.maxHealth);
     expect(gs.coins).toBe(42);
     expect(gs.keyCount).toBe(1);
+  });
+});
+
+describe('power-up buffs', () => {
+  it('grantBuff activates a buff for its duration', () => {
+    const now = 1000;
+
+    gs.grantBuff('flight', now);
+
+    expect(gs.buffActive('flight', now + 5000)).toBe(true);
+    expect(gs.buffActive('flight', now + 10000)).toBe(false); // strict: dead at exact expiry
+    expect(gs.buffActive('flight', now + 10001)).toBe(false);
+  });
+
+  it('grantBuff never shortens a cinematic-extended expiry', () => {
+    gs.grantBuff('flight', 0);
+    gs.extendBuffs(8000, 1000); // expiry now 18000
+    gs.grantBuff('flight', 5000); // fresh orb would only reach 15000
+
+    expect(gs.buffActive('flight', 17999)).toBe(true);
+    expect(gs.buffActive('flight', 18000)).toBe(false);
+  });
+
+  it('checking an expired buff prunes it from the map', () => {
+    gs.grantBuff('flight', 0);
+
+    expect(gs.buffActive('flight', 10000)).toBe(false);
+    expect(gs.activeBuffs.size).toBe(0);
+  });
+
+  it('activeBuffList returns only live buffs', () => {
+    gs.grantBuff('flight', 0);
+    gs.grantBuff('giant', 5000);
+
+    const list = gs.activeBuffList(12000); // flight expired, giant live
+    expect(list).toEqual([{ type: 'giant', expiresAt: 15000 }]);
+    expect(gs.activeBuffs.size).toBe(1);
+  });
+
+  it('grantBuff refreshes duplicate grants instead of stacking', () => {
+    gs.grantBuff('flight', 0);
+    gs.grantBuff('flight', 8000);
+
+    expect(gs.buffActive('flight', 17000)).toBe(true);
+    expect(gs.buffActive('flight', 18001)).toBe(false);
+  });
+
+  it('damageMultiplier combines mega damage and giant buffs', () => {
+    expect(gs.damageMultiplier(0)).toBe(1);
+    gs.grantBuff('megaDamage', 0);
+    expect(gs.damageMultiplier(1)).toBe(2);
+    gs.grantBuff('giant', 0);
+    expect(gs.damageMultiplier(1)).toBe(3);
+  });
+
+  it('visualScale grows only while giant is active', () => {
+    expect(gs.visualScale(0)).toBe(1);
+    gs.grantBuff('giant', 0);
+    expect(gs.visualScale(1)).toBe(1.35);
+    expect(gs.visualScale(10001)).toBe(1);
+  });
+
+  it('reports invincible and flight helper states', () => {
+    expect(gs.isInvincible(0)).toBe(false);
+    expect(gs.canFly(0)).toBe(false);
+
+    gs.grantBuff('invincible', 0);
+    gs.grantBuff('flight', 0);
+
+    expect(gs.isInvincible(1)).toBe(true);
+    expect(gs.canFly(1)).toBe(true);
+    expect(gs.isInvincible(10001)).toBe(false);
+    expect(gs.canFly(10001)).toBe(false);
+  });
+
+  it('extendBuffs pushes every active expiry out for cinematic pauses', () => {
+    gs.grantBuff('flight', 0);
+    gs.grantBuff('giant', 1000);
+    gs.extendBuffs(2500, 2000);
+
+    expect(gs.buffActive('flight', 12000)).toBe(true);
+    expect(gs.buffActive('flight', 12501)).toBe(false);
+    expect(gs.buffActive('giant', 13499)).toBe(true);
+    expect(gs.buffActive('giant', 13501)).toBe(false);
+  });
+
+  it('extendBuffs drops expired entries instead of resurrecting them', () => {
+    gs.grantBuff('flight', 0);
+    gs.extendBuffs(60000, 11000); // flight already expired at 10000
+
+    expect(gs.buffActive('flight', 11001)).toBe(false);
+    expect(gs.activeBuffs.size).toBe(0);
+  });
+
+  it('resetRun clears runtime buffs', () => {
+    gs.grantBuff('flight', 0);
+    gs.resetRun();
+
+    expect(gs.buffActive('flight', 1)).toBe(false);
+    expect(gs.activeBuffs.size).toBe(0);
+  });
+
+  it('clearBuffs empties the active buff map', () => {
+    gs.grantBuff('flight', 0);
+    gs.grantBuff('megaDamage', 0);
+    gs.clearBuffs();
+
+    expect(gs.activeBuffs.size).toBe(0);
   });
 });
 
@@ -189,6 +301,193 @@ describe('level progression', () => {
     fresh.load();
     expect(fresh.currentLevel).toBe(1);
     expect(fresh.maxUnlockedLevel).toBe(Math.min(2, LEVELS.length));
+  });
+});
+
+describe('consumableState', () => {
+  it('reports owned/cap/atCap for count-based consumables', () => {
+    gs.potions = 2;
+    expect(gs.consumableState('potion')).toEqual({ owned: 2, cap: 3, atCap: false });
+    gs.potions = 3;
+    expect(gs.consumableState('potion')).toEqual({ owned: 3, cap: 3, atCap: true });
+    gs.lives = 0;
+    expect(gs.consumableState('life')).toEqual({ owned: 0, cap: 2, atCap: false });
+  });
+
+  it('treats shield as owned while any charge remains', () => {
+    gs.shieldHits = 0;
+    expect(gs.consumableState('shield')).toEqual({ owned: 0, cap: 1, atCap: false });
+    gs.shieldHits = 2;
+    expect(gs.consumableState('shield')).toEqual({ owned: 1, cap: 1, atCap: true });
+  });
+});
+
+describe('shop purchases', () => {
+  it('buySword upgrades when coins cover the next tier and persists', () => {
+    gs.coins = SWORDS[1].cost;
+
+    expect(gs.buySword()).toBe(true);
+
+    expect(gs.coins).toBe(0);
+    expect(gs.swordIndex).toBe(1);
+    const fresh = new (GameState as any)();
+    fresh.load();
+    expect(fresh.swordIndex).toBe(1);
+  });
+
+  it('buySword fails without enough coins and leaves state unchanged', () => {
+    gs.coins = SWORDS[1].cost - 1;
+
+    expect(gs.buySword()).toBe(false);
+
+    expect(gs.coins).toBe(SWORDS[1].cost - 1);
+    expect(gs.swordIndex).toBe(0);
+  });
+
+  it('buySword fails at the max tier and leaves state unchanged', () => {
+    gs.swordIndex = SWORDS.length - 1;
+    gs.coins = 9999;
+
+    expect(gs.buySword()).toBe(false);
+
+    expect(gs.coins).toBe(9999);
+    expect(gs.swordIndex).toBe(SWORDS.length - 1);
+  });
+
+  it('currentSword and swordDamage derive from the selected sword tier', () => {
+    gs.swordIndex = 2;
+
+    expect(gs.currentSword).toBe(SWORDS[2]);
+    expect(gs.swordDamage).toBe(SWORDS[2].damage);
+  });
+
+  it('buyConsumable buys potions and respects the potion cap', () => {
+    gs.coins = CONSUMABLES.potion.cost;
+
+    expect(gs.buyConsumable('potion')).toBe(true);
+    expect(gs.coins).toBe(0);
+    expect(gs.potions).toBe(1);
+
+    gs.potions = CONSUMABLES.potion.cap;
+    gs.coins = CONSUMABLES.potion.cost;
+    expect(gs.buyConsumable('potion')).toBe(false);
+    expect(gs.coins).toBe(CONSUMABLES.potion.cost);
+    expect(gs.potions).toBe(CONSUMABLES.potion.cap);
+  });
+
+  it('buyConsumable buys extra lives and respects the life cap', () => {
+    gs.coins = CONSUMABLES.life.cost;
+
+    expect(gs.buyConsumable('life')).toBe(true);
+    expect(gs.coins).toBe(0);
+    expect(gs.lives).toBe(1);
+
+    gs.lives = CONSUMABLES.life.cap;
+    gs.coins = CONSUMABLES.life.cost;
+    expect(gs.buyConsumable('life')).toBe(false);
+    expect(gs.coins).toBe(CONSUMABLES.life.cost);
+    expect(gs.lives).toBe(CONSUMABLES.life.cap);
+  });
+
+  it('buyConsumable buys shields only at zero shield hits', () => {
+    gs.coins = CONSUMABLES.shield.cost;
+
+    expect(gs.buyConsumable('shield')).toBe(true);
+    expect(gs.coins).toBe(0);
+    expect(gs.shieldHits).toBe(SHOP.shieldCharges);
+
+    gs.coins = CONSUMABLES.shield.cost;
+    expect(gs.buyConsumable('shield')).toBe(false);
+    expect(gs.coins).toBe(CONSUMABLES.shield.cost);
+    expect(gs.shieldHits).toBe(SHOP.shieldCharges);
+  });
+
+  it('buyConsumable fails when coins do not cover the consumable cost', () => {
+    gs.coins = CONSUMABLES.potion.cost - 1;
+
+    expect(gs.buyConsumable('potion')).toBe(false);
+
+    expect(gs.coins).toBe(CONSUMABLES.potion.cost - 1);
+    expect(gs.potions).toBe(0);
+  });
+});
+
+describe('shop persistence', () => {
+  function loadSave(extra: Record<string, unknown>) {
+    localStorage.setItem(
+      SAVE_KEY,
+      JSON.stringify({
+        coins: 0,
+        keys: [false, false, false, false, false],
+        bestStreak: 0,
+        currentLevel: 1,
+        maxUnlockedLevel: 1,
+        ...extra,
+      })
+    );
+    const fresh = new (GameState as any)();
+    fresh.load();
+    return fresh as GameState;
+  }
+
+  it('save and load roundtrip persists sword and consumable fields', () => {
+    gs.swordIndex = 3;
+    gs.potions = 2;
+    gs.shieldHits = 1;
+    gs.lives = 2;
+    gs.save();
+
+    const fresh = new (GameState as any)();
+    fresh.load();
+
+    expect(fresh.swordIndex).toBe(3);
+    expect(fresh.potions).toBe(2);
+    expect(fresh.shieldHits).toBe(1);
+    expect(fresh.lives).toBe(2);
+  });
+
+  it('loads legacy saves without shop fields with shop defaults', () => {
+    localStorage.setItem(
+      SAVE_KEY,
+      JSON.stringify({ coins: 10, keys: [false, false, false, false, false], bestStreak: 3 })
+    );
+
+    const fresh = new (GameState as any)();
+    fresh.load();
+
+    expect(fresh.swordIndex).toBe(0);
+    expect(fresh.potions).toBe(0);
+    expect(fresh.shieldHits).toBe(0);
+    expect(fresh.lives).toBe(0);
+  });
+
+  it('clamps oversized swordIndex to the max sword tier', () => {
+    expect(loadSave({ swordIndex: 99 }).swordIndex).toBe(SWORDS.length - 1);
+  });
+
+  it('clamps negative swordIndex to the starting sword tier', () => {
+    expect(loadSave({ swordIndex: -1 }).swordIndex).toBe(0);
+  });
+
+  it('rejects non-integer potion counts to zero', () => {
+    expect(loadSave({ potions: 7.5 }).potions).toBe(0);
+  });
+
+  it('rejects null lives to zero', () => {
+    expect(loadSave({ lives: null }).lives).toBe(0);
+  });
+
+  it('clamps negative lives to zero', () => {
+    expect(loadSave({ lives: -1 }).lives).toBe(0);
+  });
+
+  it('clamps oversized potion counts to the potion cap', () => {
+    expect(loadSave({ potions: 99 }).potions).toBe(CONSUMABLES.potion.cap);
+  });
+
+  it('clamps shield hits to the configured shield charge range', () => {
+    expect(loadSave({ shieldHits: -1 }).shieldHits).toBe(0);
+    expect(loadSave({ shieldHits: SHOP.shieldCharges + 10 }).shieldHits).toBe(SHOP.shieldCharges);
   });
 });
 

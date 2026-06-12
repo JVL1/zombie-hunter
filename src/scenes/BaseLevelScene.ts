@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Assets } from '../assets';
-import { BOSS, GAME_H, GAME_W, WORLD, ZOMBIE, ZombieVariant } from '../config';
+import { BOSS, GAME_H, GAME_W, SHOP, WORLD, ZOMBIE, ZombieVariant } from '../config';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
 import { Juice } from '../core/Juice';
@@ -69,6 +69,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.events.off('player-slam');
     this.events.off('player-slam-land');
     this.events.off('player-died');
+    this.events.off('player-revived');
     this.events.off('boss-shockwave');
     this.events.off('boss-summon');
 
@@ -442,6 +443,9 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     }
 
     this.pickups.add(new Pickup(this, z.x, z.y - 20, 'coin'));
+    if (z.powerUp) {
+      this.pickups.add(new Pickup(this, z.x, z.y - 30, 'orb', z.powerUp));
+    }
     if (Math.random() < ZOMBIE.heartDropChance) {
       this.pickups.add(new Pickup(this, z.x + 14, z.y - 24, 'heart'));
     }
@@ -502,6 +506,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.time.delayedCall(1300, () => {
       if (!this.boss) return;
       this.boss.triggerRise();
+
+      this.pickups.getChildren().forEach((pickupObj) => {
+        const pickup = pickupObj as Pickup;
+        if (pickup.active && pickup.kind === 'orb') pickup.magnetize();
+      });
 
       // Clear stragglers before shrinking the world
       this.zombies.getChildren().slice().forEach((z) => (z as Zombie).destroy());
@@ -603,6 +612,12 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.time.delayedCall(800, () => {
       this.pickups.add(new Pickup(this, bossX, bossY - 60, 'key'));
     });
+
+    // Boss bounty: a burst of coins around the corpse
+    for (let i = 0; i < SHOP.bossCoinBurst; i++) {
+      const spread = (i - (SHOP.bossCoinBurst - 1) / 2) * 18;
+      this.pickups.add(new Pickup(this, bossX + spread, bossY - 40, 'coin'));
+    }
   }
 
   private onKeyCollected() {
@@ -631,7 +646,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.controls.update();
 
-    if (!this.cinematic) {
+    if (this.cinematic) {
+      // Slide buff expiries forward every frozen frame — giant/aura effects
+      // must never flicker off mid-cutscene.
+      this.gameState.extendBuffs(delta, this.time.now);
+    } else {
       this.player.update();
     }
 

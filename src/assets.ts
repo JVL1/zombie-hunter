@@ -1,5 +1,7 @@
 // Centralized asset keys — single source of truth.
 
+import type { PowerUpType } from './config';
+
 export const Assets = {
   // Player (single 800x448 sheet, 80x64 frames, 10 cols x 7 rows)
   PLAYER_SHEET: 'player-sheet',
@@ -40,6 +42,10 @@ export const Assets = {
   COIN: 'gen-coin',
   HEART: 'gen-heart',
   KEY: 'gen-key',
+  ORB_FLIGHT: 'gen-orb-flight',
+  ORB_MEGA_DAMAGE: 'gen-orb-megaDamage',
+  ORB_GIANT: 'gen-orb-giant',
+  ORB_INVINCIBLE: 'gen-orb-invincible',
   RING: 'gen-ring',
   FOG: 'gen-fog',
   PIXEL: 'gen-pixel',
@@ -81,7 +87,24 @@ export const Assets = {
   THRONE_TRAIN: 'gen-throne-train',
   P_SMOKE: 'p-smoke',
   P_SPEEDLINE: 'p-speedline',
+
+  // Shop (between-levels hub) — generated props + HUD consumable icons
+  SHOP_ANVIL: 'gen-shop-anvil',
+  SHOP_SHACK: 'gen-shop-shack',
+  SHOP_COUNTER: 'gen-shop-counter',
+  SHOP_ICON_POTION: 'gen-shop-icon-potion',
+  SHOP_ICON_SHIELD: 'gen-shop-icon-shield',
+  SHOP_ICON_LIFE: 'gen-shop-icon-life',
 } as const;
+
+// Per-buff baked orb textures — keyed by PowerUpType so adding a powerup
+// without an orb texture fails the typecheck here (and only here).
+export const OrbTextures: Record<PowerUpType, string> = {
+  flight: Assets.ORB_FLIGHT,
+  megaDamage: Assets.ORB_MEGA_DAMAGE,
+  giant: Assets.ORB_GIANT,
+  invincible: Assets.ORB_INVINCIBLE,
+};
 
 // Player sheet rows (10 cols): 0 idle(5) 1 walk(8) 2 run(8) 3 jump(4) 4 fall(4) 5 attack(6) 6 death(10)
 export const PlayerAnims = {
@@ -102,7 +125,17 @@ export interface ZombieAnimSet {
   dead: string;
 }
 
-export const ZombieAnims: Record<'zombie' | 'urban', ZombieAnimSet> = {
+// Anim-set keys: base sprite families plus the baked power-monster variants.
+// Keep this a closed union — Zombie picks sets by key, no record widening.
+export type ZombieAnimSetKey =
+  | 'zombie'
+  | 'urban'
+  | 'pm-vulture'
+  | 'pm-rage'
+  | 'pm-titan'
+  | 'pm-crystal';
+
+export const ZombieAnims: Record<ZombieAnimSetKey, ZombieAnimSet> = {
   zombie: {
     idle: 'zombie-idle',
     walk: 'zombie-walk',
@@ -116,5 +149,33 @@ export const ZombieAnims: Record<'zombie' | 'urban', ZombieAnimSet> = {
     attack: 'urban-attack',
     hurt: 'urban-hurt',
     dead: 'urban-dead',
+  },
+  'pm-vulture': {
+    idle: 'pm-vulture-idle',
+    walk: 'pm-vulture-walk',
+    attack: 'pm-vulture-attack',
+    hurt: 'pm-vulture-hurt',
+    dead: 'pm-vulture-dead',
+  },
+  'pm-rage': {
+    idle: 'pm-rage-idle',
+    walk: 'pm-rage-walk',
+    attack: 'pm-rage-attack',
+    hurt: 'pm-rage-hurt',
+    dead: 'pm-rage-dead',
+  },
+  'pm-titan': {
+    idle: 'pm-titan-idle',
+    walk: 'pm-titan-walk',
+    attack: 'pm-titan-attack',
+    hurt: 'pm-titan-hurt',
+    dead: 'pm-titan-dead',
+  },
+  'pm-crystal': {
+    idle: 'pm-crystal-idle',
+    walk: 'pm-crystal-walk',
+    attack: 'pm-crystal-attack',
+    hurt: 'pm-crystal-hurt',
+    dead: 'pm-crystal-dead',
   },
 };

@@ -9,18 +9,28 @@ export class InputController {
   private keyA: Phaser.Input.Keyboard.Key;
   private keyJ: Phaser.Input.Keyboard.Key;
   private keyW: Phaser.Input.Keyboard.Key;
+  private keyEnter: Phaser.Input.Keyboard.Key;
   private pad: Phaser.Input.Gamepad.Gamepad | null = null;
   private prevPadJump = false;
   private prevPadAttack = false;
   private prevPadDash = false;
+  private prevPadUp = false;
+  private prevPadDown = false;
+  private prevPadLeft = false;
+  private prevPadRight = false;
 
   left = false;
   right = false;
   down = false;
+  upJustPressed = false;
+  downJustPressed = false;
+  leftJustPressed = false;
+  rightJustPressed = false;
   jumpHeld = false;
   jumpJustPressed = false;
   attackJustPressed = false;
   dashJustPressed = false;
+  confirmJustPressed = false;
 
   private jumpBufferedAt = -Infinity;
 
@@ -31,6 +41,7 @@ export class InputController {
     this.keyA = kb.addKey(Phaser.Input.Keyboard.KeyCodes.A);
     this.keyJ = kb.addKey(Phaser.Input.Keyboard.KeyCodes.J);
     this.keyW = kb.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+    this.keyEnter = kb.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
 
     if (scene.input.gamepad) {
       if (scene.input.gamepad.total > 0) {
@@ -43,10 +54,33 @@ export class InputController {
   }
 
   update() {
+    const arrowUpJustDown = Phaser.Input.Keyboard.JustDown(this.cursors.up);
+    const arrowDownJustDown = Phaser.Input.Keyboard.JustDown(this.cursors.down);
+    const arrowLeftJustDown = Phaser.Input.Keyboard.JustDown(this.cursors.left);
+    const arrowRightJustDown = Phaser.Input.Keyboard.JustDown(this.cursors.right);
+    const spaceJustDown = Phaser.Input.Keyboard.JustDown(this.cursors.space);
+    const wJustDown = Phaser.Input.Keyboard.JustDown(this.keyW);
+    const aJustDown = Phaser.Input.Keyboard.JustDown(this.keyA);
+    const jJustDown = Phaser.Input.Keyboard.JustDown(this.keyJ);
+    const shiftJustDown = Phaser.Input.Keyboard.JustDown(this.cursors.shift);
+    // Filter OS key-repeat: a held ENTER carried into a new scene re-arms
+    // JustDown on its first auto-repeat event (Phaser's Key.onDown has no
+    // repeat guard), which would fire a phantom confirm in the shop.
+    const enterJustDown =
+      Phaser.Input.Keyboard.JustDown(this.keyEnter) &&
+      !(this.keyEnter.originalEvent as KeyboardEvent | undefined)?.repeat;
+
     const padX = this.pad ? this.pad.leftStick.x : 0;
+    const padY = this.pad ? this.pad.leftStick.y : 0;
     const padLeft = this.pad ? this.pad.left || padX < -0.3 : false;
     const padRight = this.pad ? this.pad.right || padX > 0.3 : false;
-    const padDown = this.pad ? this.pad.down || (this.pad.leftStick.y > 0.5) : false;
+    const padDown = this.pad ? this.pad.down || padY > 0.5 : false;
+    // Menu nav uses a deliberately stiffer 0.5 stick threshold than gameplay
+    // left/right (0.3) so a drifting stick doesn't skip shop selections.
+    const padMenuUp = this.pad ? this.pad.up || padY < -0.5 : false;
+    const padMenuDown = padDown;
+    const padMenuLeft = this.pad ? this.pad.left || padX < -0.5 : false;
+    const padMenuRight = this.pad ? this.pad.right || padX > 0.5 : false;
     const padJump = this.pad ? this.pad.A : false;
     const padAttack = this.pad ? Boolean(this.pad.X || this.pad.B) : false;
     const padDash = this.pad ? this.pad.R1 > 0 || this.pad.L1 > 0 : false;
@@ -57,23 +91,27 @@ export class InputController {
     this.jumpHeld =
       this.cursors.up.isDown || this.cursors.space.isDown || this.keyW.isDown || padJump;
 
+    this.upJustPressed = arrowUpJustDown || (padMenuUp && !this.prevPadUp);
+    this.downJustPressed = arrowDownJustDown || (padMenuDown && !this.prevPadDown);
+    this.leftJustPressed = arrowLeftJustDown || (padMenuLeft && !this.prevPadLeft);
+    this.rightJustPressed = arrowRightJustDown || (padMenuRight && !this.prevPadRight);
+
     this.jumpJustPressed =
-      Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
-      Phaser.Input.Keyboard.JustDown(this.cursors.space) ||
-      Phaser.Input.Keyboard.JustDown(this.keyW) ||
-      (padJump && !this.prevPadJump);
+      arrowUpJustDown || spaceJustDown || wJustDown || (padJump && !this.prevPadJump);
 
     this.attackJustPressed =
-      Phaser.Input.Keyboard.JustDown(this.keyA) ||
-      Phaser.Input.Keyboard.JustDown(this.keyJ) ||
-      (padAttack && !this.prevPadAttack);
+      aJustDown || jJustDown || (padAttack && !this.prevPadAttack);
 
-    this.dashJustPressed =
-      Phaser.Input.Keyboard.JustDown(this.cursors.shift) || (padDash && !this.prevPadDash);
+    this.dashJustPressed = shiftJustDown || (padDash && !this.prevPadDash);
+    this.confirmJustPressed = this.attackJustPressed || enterJustDown;
 
     this.prevPadJump = padJump;
     this.prevPadAttack = padAttack;
     this.prevPadDash = padDash;
+    this.prevPadUp = padMenuUp;
+    this.prevPadDown = padMenuDown;
+    this.prevPadLeft = padMenuLeft;
+    this.prevPadRight = padMenuRight;
 
     if (this.jumpJustPressed) {
       this.jumpBufferedAt = this.scene.time.now;

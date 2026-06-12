@@ -1,4 +1,14 @@
-import { COMBAT, PLAYER } from '../config';
+import {
+  BUFF,
+  COMBAT,
+  CONSUMABLES,
+  PLAYER,
+  POWERUPS,
+  SHOP,
+  SWORDS,
+  type ConsumableKind,
+  type PowerUpType,
+} from '../config';
 import { LEVELS, levelByNumber, type LevelDef } from '../levels';
 
 const SAVE_KEY = 'zombie-hunters-save-v2';
@@ -9,6 +19,10 @@ interface SaveData {
   bestStreak: number;
   currentLevel: number;
   maxUnlockedLevel: number;
+  swordIndex: number;
+  potions: number;
+  shieldHits: number;
+  lives: number;
 }
 
 // Run + persistent state. Coins/keys/best streak survive page reloads via localStorage.
@@ -19,10 +33,13 @@ export class GameState {
   maxHealth = PLAYER.maxHealth;
   coins = 0;
   keys: boolean[] = [false, false, false, false, false];
-  currentSword = 'Rusty Blade';
-  swordDamage = COMBAT.baseSwordDamage;
+  swordIndex = 0;
+  potions = 0;
+  shieldHits = 0;
+  lives = 0;
   currentLevel = 1; // the level being played (replays move it back)
   maxUnlockedLevel = 1; // unlock high-water mark — never decreases
+  activeBuffs = new Map<PowerUpType, number>();
 
   // Kill streak (combo meter)
   streak = 0;
@@ -48,6 +65,68 @@ export class GameState {
     return now < this.streakExpiresAt ? this.streak : 0;
   }
 
+  grantBuff(type: PowerUpType, now: number) {
+    // Refresh, never shorten: a cinematic pause may have pushed the current
+    // expiry past the default duration — a fresh orb must not nerf it.
+    const current = this.activeBuffs.get(type) ?? 0;
+    this.activeBuffs.set(type, Math.max(current, now + POWERUPS[type].durationMs));
+  }
+
+  buffActive(type: PowerUpType, now: number): boolean {
+    const expiresAt = this.activeBuffs.get(type);
+    if (expiresAt === undefined) return false;
+    if (now >= expiresAt) {
+      this.activeBuffs.delete(type); // lazy-prune so expired entries never linger
+      return false;
+    }
+    return true;
+  }
+
+  // Expired-filtered view for HUD countdowns — consumers never re-implement
+  // the expiry check.
+  activeBuffList(now: number): { type: PowerUpType; expiresAt: number }[] {
+    const list: { type: PowerUpType; expiresAt: number }[] = [];
+    for (const [type, expiresAt] of this.activeBuffs) {
+      if (this.buffActive(type, now)) list.push({ type, expiresAt });
+    }
+    return list;
+  }
+
+  damageMultiplier(now: number): number {
+    let multiplier = 1;
+    if (this.buffActive('megaDamage', now)) multiplier *= BUFF.megaDamageMultiplier;
+    if (this.buffActive('giant', now)) multiplier *= BUFF.giantDamageMultiplier;
+    return multiplier;
+  }
+
+  visualScale(now: number): number {
+    return this.buffActive('giant', now) ? BUFF.giantVisualScale : 1;
+  }
+
+  isInvincible(now: number): boolean {
+    return this.buffActive('invincible', now);
+  }
+
+  canFly(now: number): boolean {
+    return this.buffActive('flight', now);
+  }
+
+  // Slide every ACTIVE expiry forward (cinematic pause). Expired entries are
+  // dropped, never resurrected.
+  extendBuffs(ms: number, now: number) {
+    for (const [type, expiresAt] of this.activeBuffs) {
+      if (now >= expiresAt) {
+        this.activeBuffs.delete(type);
+      } else {
+        this.activeBuffs.set(type, expiresAt + ms);
+      }
+    }
+  }
+
+  clearBuffs() {
+    this.activeBuffs.clear();
+  }
+
   collectKey(index: number) {
     this.keys[index] = true;
     this.save();
@@ -55,6 +134,63 @@ export class GameState {
 
   get keyCount(): number {
     return this.keys.filter(Boolean).length;
+  }
+
+  get currentSword() {
+    return SWORDS[this.swordIndex];
+  }
+
+  get swordDamage(): number {
+    return this.currentSword.damage;
+  }
+
+  buySword(): boolean {
+    const nextSwordIndex = this.swordIndex + 1;
+    if (nextSwordIndex >= SWORDS.length) return false;
+
+    const nextSword = SWORDS[nextSwordIndex];
+    if (this.coins < nextSword.cost) return false;
+
+    this.coins -= nextSword.cost;
+    this.swordIndex = nextSwordIndex;
+    this.save();
+    return true;
+  }
+
+  // Single source of truth for shop/HUD inventory display: how many of a
+  // consumable the player owns and whether more can be bought. Shield is
+  // special — it is "owned" while any charge remains and rebuyable only at 0.
+  consumableState(kind: ConsumableKind): { owned: number; cap: number; atCap: boolean } {
+    const cap = CONSUMABLES[kind].cap;
+    if (kind === 'shield') {
+      return { owned: this.shieldHits > 0 ? 1 : 0, cap, atCap: this.shieldHits !== 0 };
+    }
+    const owned = kind === 'potion' ? this.potions : this.lives;
+    return { owned, cap, atCap: owned >= cap };
+  }
+
+  buyConsumable(kind: ConsumableKind): boolean {
+    const item = CONSUMABLES[kind];
+    if (this.coins < item.cost) return false;
+
+    if (kind === 'potion') {
+      if (this.potions >= item.cap) return false;
+      this.coins -= item.cost;
+      this.potions += 1;
+    } else if (kind === 'life') {
+      if (this.lives >= item.cap) return false;
+      this.coins -= item.cost;
+      this.lives += 1;
+    } else if (kind === 'shield') {
+      if (this.shieldHits !== 0) return false;
+      this.coins -= item.cost;
+      this.shieldHits = SHOP.shieldCharges;
+    } else {
+      return false;
+    }
+
+    this.save();
+    return true;
   }
 
   // Level beaten: move to the next built level (sticks at the last one) and save.
@@ -83,6 +219,7 @@ export class GameState {
     this.health = this.maxHealth;
     this.streak = 0;
     this.streakExpiresAt = 0;
+    this.clearBuffs();
   }
 
   save() {
@@ -92,6 +229,10 @@ export class GameState {
       bestStreak: this.bestStreak,
       currentLevel: this.currentLevel,
       maxUnlockedLevel: this.maxUnlockedLevel,
+      swordIndex: this.swordIndex,
+      potions: this.potions,
+      shieldHits: this.shieldHits,
+      lives: this.lives,
     };
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -105,9 +246,17 @@ export class GameState {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw) as SaveData;
+      const clampInteger = (value: unknown, fallback: number, min: number, max: number) => {
+        const n = value ?? fallback;
+        return Number.isInteger(n) ? Math.min(Math.max(n as number, min), max) : fallback;
+      };
       this.coins = data.coins ?? 0;
       this.keys = Array.isArray(data.keys) && data.keys.length === 5 ? data.keys : this.keys;
       this.bestStreak = data.bestStreak ?? 0;
+      this.swordIndex = clampInteger(data.swordIndex, 0, 0, SWORDS.length - 1);
+      this.potions = clampInteger(data.potions, 0, 0, CONSUMABLES.potion.cap);
+      this.shieldHits = clampInteger(data.shieldHits, 0, 0, SHOP.shieldCharges);
+      this.lives = clampInteger(data.lives, 0, 0, CONSUMABLES.life.cap);
       // Legacy v2-release saves predate currentLevel; clamp anything weird to built levels
       const lvl = (data as { currentLevel?: unknown }).currentLevel;
       this.currentLevel = Number.isInteger(lvl)

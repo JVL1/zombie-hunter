@@ -3,7 +3,6 @@ import { Assets } from '../assets';
 import { GAME_H, GAME_W } from '../config';
 import { GameState } from '../core/GameState';
 import { SynthAudio } from '../core/SynthAudio';
-import { LEVELS } from '../levels';
 
 export class VictoryScene extends Phaser.Scene {
   constructor() {
@@ -70,7 +69,7 @@ export class VictoryScene extends Phaser.Scene {
     const promptText =
       next === 'MainMenu'
         ? 'PRESS ENTER — more levels coming soon!'
-        : `PRESS ENTER — onward to ${LEVELS[def.levelNumber].name}!`; // def.levelNumber indexes the NEXT level (arrays are 0-based); guarded by the ternary
+        : 'PRESS ENTER — visit the shop!';
 
     const prompt = this.add
       .text(GAME_W / 2, 460, promptText, {
@@ -100,8 +99,14 @@ export class VictoryScene extends Phaser.Scene {
       if (started) return;
       started = true;
       SynthAudio.uiSelect();
-      if (next !== 'MainMenu') gs.advanceLevel();
-      this.scene.start(next);
+      if (next !== 'MainMenu') {
+        gs.advanceLevel();
+        // The shop hub sits between levels; it derives the destination from
+        // GameState.currentLevelDef when the player heads out.
+        this.scene.start('Shop');
+      } else {
+        this.scene.start(next);
+      }
     };
     this.input.keyboard!.once('keydown-ENTER', go);
 

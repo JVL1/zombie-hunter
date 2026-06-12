@@ -1,7 +1,13 @@
 import Phaser from 'phaser';
 import { Assets } from '../assets';
-import { COMBAT, GAME_W } from '../config';
+import { COMBAT, GAME_W, POWERUPS, type PowerUpType } from '../config';
 import { GameState } from '../core/GameState';
+
+type BuffHudSlot = {
+  type: PowerUpType;
+  container: Phaser.GameObjects.Container;
+  bar: Phaser.GameObjects.Rectangle;
+};
 
 // Overlay UI: health bar with damage ghost, coins, key slots, combo meter.
 export class HUDScene extends Phaser.Scene {
@@ -14,6 +20,11 @@ export class HUDScene extends Phaser.Scene {
   private coinText!: Phaser.GameObjects.Text;
   private lastCoins = -1;
   private keyIcons: Phaser.GameObjects.Image[] = [];
+  private consumableRow!: Phaser.GameObjects.Container;
+  private consumableCounts: Phaser.GameObjects.Text[] = [];
+  private lastConsumableCounts = [-1, -1, -1];
+  private consumablesShown = false;
+  private buffSlots: BuffHudSlot[] = [];
   private comboText!: Phaser.GameObjects.Text;
   private comboBar!: Phaser.GameObjects.Rectangle;
 
@@ -26,6 +37,10 @@ export class HUDScene extends Phaser.Scene {
     this.ghostHealth = this.gameState.health;
     this.lastCoins = -1;
     this.keyIcons = [];
+    this.consumableCounts = [];
+    this.lastConsumableCounts = [-1, -1, -1];
+    this.consumablesShown = false;
+    this.buffSlots = [];
 
     // Panel
     this.add.rectangle(14, 14, 246, 74, 0x000000, 0.45).setOrigin(0);
@@ -51,6 +66,33 @@ export class HUDScene extends Phaser.Scene {
       this.add.rectangle(x, 62, 20, 26, 0x111111, 0.8).setStrokeStyle(1, 0x665522);
       this.keyIcons.push(this.add.image(x, 62, Assets.KEY).setScale(0.6).setVisible(false));
     }
+
+    // Consumables row (latches visible once any consumable appears this scene)
+    const countStyle = {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 4,
+    };
+    this.consumableRow = this.add.container(0, 0);
+    this.consumableRow.add(this.add.rectangle(14, 92, 246, 24, 0x000000, 0.45).setOrigin(0));
+
+    const consumableSlots = [
+      { icon: Assets.SHOP_ICON_POTION, x: 32, color: '#ff7788' },
+      { icon: Assets.SHOP_ICON_SHIELD, x: 106, color: '#bbddff' },
+      { icon: Assets.SHOP_ICON_LIFE, x: 180, color: '#ffdd55' },
+    ];
+    consumableSlots.forEach(({ icon, x, color }) => {
+      this.consumableRow.add(this.add.image(x, 104, icon).setScale(1.3));
+      const text = this.add
+        .text(x + 14, 104, '0', { ...countStyle, color })
+        .setOrigin(0, 0.5);
+      this.consumableCounts.push(text);
+      this.consumableRow.add(text);
+    });
+    this.consumableRow.setVisible(false);
 
     // Combo meter (hidden until streak >= 2)
     this.comboText = this.add
@@ -99,6 +141,40 @@ export class HUDScene extends Phaser.Scene {
 
     this.gameState.keys.forEach((has, i) => this.keyIcons[i].setVisible(has));
 
+    const currentCounts = [
+      this.gameState.potions,
+      this.gameState.shieldHits,
+      this.gameState.lives,
+    ];
+    if (!this.consumablesShown && currentCounts.some((count) => count > 0)) {
+      this.consumablesShown = true;
+      this.consumableRow.setVisible(true);
+    }
+    currentCounts.forEach((count, i) => {
+      if (count !== this.lastConsumableCounts[i]) {
+        this.consumableCounts[i].setText(`${count}`);
+        this.lastConsumableCounts[i] = count;
+      }
+    });
+
+    const now = this.time.now;
+    const activeBuffs = this.gameState.activeBuffList(now);
+    // Rebuild only on real transitions; after a rebuild, buffSlots mirrors
+    // activeBuffs index-for-index, so the drain pass is a plain zip
+    let buffsChanged = activeBuffs.length !== this.buffSlots.length;
+    for (let i = 0; !buffsChanged && i < activeBuffs.length; i++) {
+      if (activeBuffs[i].type !== this.buffSlots[i].type) buffsChanged = true;
+    }
+    if (buffsChanged) this.rebuildBuffSlots(activeBuffs);
+    this.buffSlots.forEach((slot, i) => {
+      const remaining = Phaser.Math.Clamp(
+        (activeBuffs[i].expiresAt - now) / POWERUPS[slot.type].durationMs,
+        0,
+        1
+      );
+      slot.bar.width = 30 * remaining;
+    });
+
     const streak = this.gameState.currentStreak(time);
     if (streak >= 2) {
       const remaining = Phaser.Math.Clamp(
@@ -113,5 +189,20 @@ export class HUDScene extends Phaser.Scene {
       this.comboText.setVisible(false);
       this.comboBar.setVisible(false);
     }
+  }
+
+  private rebuildBuffSlots(activeBuffs: { type: PowerUpType; expiresAt: number }[]) {
+    this.buffSlots.forEach(({ container }) => container.destroy());
+    this.buffSlots = activeBuffs.map(({ type }, i) => {
+      const x = 274 + i * 54;
+      const container = this.add.container(x, 104);
+      container.add(this.add.rectangle(0, 0, 14, 14, POWERUPS[type].color).setOrigin(0, 0.5));
+      container.add(this.add.rectangle(20, 0, 30, 4, 0x111111, 0.85).setOrigin(0, 0.5));
+      const bar = this.add
+        .rectangle(20, 0, 30, 4, POWERUPS[type].color)
+        .setOrigin(0, 0.5);
+      container.add(bar);
+      return { type, container, bar };
+    });
   }
 }

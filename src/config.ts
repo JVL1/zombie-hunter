@@ -1,5 +1,7 @@
 // Every gameplay tunable in one place — tweak here, not in entity code.
 
+import type { ZombieAnimSetKey } from './assets';
+
 export const GAME_W = 960;
 export const GAME_H = 540;
 
@@ -8,7 +10,15 @@ export const WORLD = {
   groundY: 476, // top surface of the ground
 };
 
-export type ZombieVariant = 'zombie' | 'urban' | 'disgusting' | 'zanter';
+export type ZombieVariant =
+  | 'zombie'
+  | 'urban'
+  | 'disgusting'
+  | 'zanter'
+  | 'vulture'
+  | 'rage'
+  | 'titan'
+  | 'crystal';
 
 export interface ZombieVariantDef {
   base: 'zombie' | 'urban'; // which sprite pack + body size to use
@@ -18,6 +28,16 @@ export interface ZombieVariantDef {
   patrolSpeed: number;
   chaseSpeed: number;
   contactDamage: number;
+  // Power monsters: drop this buff orb on death (Task 14 wires the drop).
+  powerUp?: PowerUpType;
+  // Baked sheet key prefix — textures register as `${sheet}-idle/walk/attack/hurt/dead`.
+  // sheet and animSet are PAIRED: a variant with sheet but no animSet snaps back
+  // to the base sheet on the first play() call (anims are bound to texture keys).
+  sheet?: string;
+  animSet?: ZombieAnimSetKey;
+  // Multiply-tint baked into the sheets (NOT the runtime `tint` field, which
+  // would double-tint the baked texture on WebGL). Required alongside sheet.
+  bakeColor?: number;
 }
 
 export const PLAYER = {
@@ -52,6 +72,56 @@ export const COMBAT = {
   streakWindowMs: 4000,
 };
 
+export interface SwordDef {
+  name: string;
+  cost: number;       // coins; 0 = starting sword
+  damage: number;
+  reachBonus: number; // added to COMBAT.hitboxW
+  swingSpeed: number; // anims.timeScale multiplier; cooldowns divided by this
+  bladeTint?: number; // WebGL nicety on the sword overlay
+}
+
+export const SWORDS: SwordDef[] = [
+  { name: 'Rusty Blade',       cost: 0,   damage: 12, reachBonus: 0,  swingSpeed: 1 },
+  { name: 'Iron Cleaver',      cost: 40,  damage: 16, reachBonus: 4,  swingSpeed: 1,    bladeTint: 0x9ab0c8 },
+  { name: 'Shadow Fang',       cost: 150, damage: 20, reachBonus: 6,  swingSpeed: 1.15, bladeTint: 0x6a4a8a },
+  { name: 'Flame Edge',        cost: 300, damage: 26, reachBonus: 8,  swingSpeed: 1.15, bladeTint: 0xff7733 },
+  { name: 'Giant Sun Splicer', cost: 600, damage: 36, reachBonus: 14, swingSpeed: 1.25, bladeTint: 0xffd24a },
+];
+
+export type ConsumableKind = 'potion' | 'shield' | 'life';
+export const CONSUMABLES: Record<ConsumableKind, { name: string; cost: number; cap: number }> = {
+  potion: { name: 'Health Potion', cost: 30,  cap: 3 },
+  shield: { name: 'Shield',        cost: 50,  cap: 1 }, // grants 3 hit-charges; buy only at 0 charges
+  life:   { name: 'Extra Life',    cost: 100, cap: 2 },
+};
+
+export const SHOP = {
+  potionHealAmount: 50,
+  potionAutoThreshold: 0.3, // drink when health < 30% of max
+  shieldCharges: 3,
+  reviveInvulnMs: 2000,
+  bossCoinBurst: 5, // coins dropped when a boss dies (5 coins × coinValue 5 = +25)
+};
+
+export type PowerUpType = 'flight' | 'megaDamage' | 'giant' | 'invincible';
+
+export const POWERUPS: Record<PowerUpType, { name: string; durationMs: number; color: number }> = {
+  flight:     { name: 'FLIGHT',      durationMs: 10000, color: 0x8a5acc },
+  megaDamage: { name: 'MEGA DAMAGE', durationMs: 10000, color: 0xff3333 },
+  giant:      { name: 'GIANT MODE',  durationMs: 10000, color: 0x9a9a8c },
+  invincible: { name: 'INVINCIBLE',  durationMs: 10000, color: 0x55eedd },
+};
+
+export const BUFF = {
+  giantVisualScale: 1.35,
+  giantDamageMultiplier: 1.5,
+  megaDamageMultiplier: 2,
+  flightRiseVelocity: -260,
+  flightThrustRamp: 4, // accel toward the rise cap, in caps-per-second
+  flightDriftGravityFactor: 0.35,
+};
+
 export const ZOMBIE = {
   aggroRange: 240,
   deaggroRange: 330,
@@ -70,7 +140,13 @@ export const ZOMBIE = {
     urban:      { base: 'urban',  hp: 50, scale: 1,    patrolSpeed: 55, chaseSpeed: 95,  contactDamage: 8 },
     disgusting: { base: 'zombie', hp: 45, tint: 0x7fd16a, scale: 1.06, patrolSpeed: 65, chaseSpeed: 118, contactDamage: 10 },
     zanter:     { base: 'urban',  hp: 95, tint: 0xcdb892, scale: 1.45, patrolSpeed: 40, chaseSpeed: 72,  contactDamage: 14 },
-  } satisfies Record<ZombieVariant, ZombieVariantDef>,
+    // Power monsters (Henry renames later): elite zombies with baked sheets that
+    // drop a buff orb. sheet + animSet must stay paired (see ZombieVariantDef).
+    vulture: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 60, chaseSpeed: 110, contactDamage: 10, powerUp: 'flight',     sheet: 'pm-vulture', animSet: 'pm-vulture', bakeColor: 0x5a3a8a },
+    rage:    { base: 'zombie', hp: 80,  scale: 1.05, patrolSpeed: 70, chaseSpeed: 125, contactDamage: 12, powerUp: 'megaDamage', sheet: 'pm-rage',    animSet: 'pm-rage',    bakeColor: 0xaa2222 },
+    titan:   { base: 'urban',  hp: 110, scale: 1.5,  patrolSpeed: 38, chaseSpeed: 65,  contactDamage: 14, powerUp: 'giant',      sheet: 'pm-titan',   animSet: 'pm-titan',   bakeColor: 0x8a8a7a },
+    crystal: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 55, chaseSpeed: 100, contactDamage: 10, powerUp: 'invincible', sheet: 'pm-crystal', animSet: 'pm-crystal', bakeColor: 0x3ad8cc },
+  } satisfies Record<ZombieVariant, ZombieVariantDef> as Record<ZombieVariant, ZombieVariantDef>,
 };
 
 // Shared boss physics — per-boss stats (hp, speeds, damage, attack intervals)

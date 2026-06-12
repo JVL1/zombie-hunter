@@ -1,6 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { LEVELS, TRAIN, levelByNumber } from './levels';
-import { WORLD, ZOMBIE } from './config';
+import { POWERUPS, WORLD, ZOMBIE } from './config';
+
+interface Rect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+// Body rect at REST (feet on the ground) — the wedge hazard is a persistent
+// overlap where the zombie lives, not the transient 8px-elevated spawn drop
+// (BaseLevelScene.zombieSpawnY), which gravity + separation resolve benignly.
+// Base sizes must match Zombie.ts setSize/setOffset (urban 40x80, others 32x64).
+function restingBodyRect(spawn: { x: number; variant: keyof typeof ZOMBIE.variants }): Rect {
+  const v = ZOMBIE.variants[spawn.variant];
+  const width = (v.base === 'urban' ? 40 : 32) * v.scale;
+  const height = (v.base === 'urban' ? 80 : 64) * v.scale;
+  return {
+    left: spawn.x - width / 2,
+    right: spawn.x + width / 2,
+    top: WORLD.groundY - height,
+    bottom: WORLD.groundY,
+  };
+}
+
+function overlaps(a: Rect, b: Rect): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
 
 describe('level registry integrity', () => {
   it('level numbers and key indexes are sequential from 1 / 0', () => {
@@ -42,6 +69,66 @@ describe('level registry integrity', () => {
         if (s.y !== undefined) {
           expect(s.y).toBeGreaterThan(100);
           expect(s.y).toBeLessThan(WORLD.groundY - 60);
+        }
+      }
+    }
+  });
+
+  it('every powerUp type appears at least once across built levels', () => {
+    const seen = new Set<string>();
+    for (const def of LEVELS) {
+      for (const spawn of def.zombieSpawns) {
+        const powerUp = ZOMBIE.variants[spawn.variant].powerUp;
+        if (powerUp) seen.add(powerUp);
+      }
+    }
+
+    expect([...seen].sort()).toEqual(Object.keys(POWERUPS).sort());
+  });
+
+  it('power monsters spawn well before the boss trigger', () => {
+    for (const def of LEVELS) {
+      for (const spawn of def.zombieSpawns) {
+        if (!ZOMBIE.variants[spawn.variant].powerUp) continue;
+        expect(spawn.x).toBeLessThan(def.triggerX - ZOMBIE.aggroRange);
+      }
+    }
+  });
+
+  it('power-monster ground spawns do not overlap stair stones or platform bands', () => {
+    for (const def of LEVELS) {
+      const platformRects = def.platforms.flatMap(([x, y, count]) =>
+        Array.from({ length: count }, (_, i) => ({
+          left: x + i * 32,
+          right: x + i * 32 + 32,
+          top: y - 8,
+          bottom: y + 8,
+        }))
+      );
+      const stairRects = def.stairs.flatMap(([startX, baseY, steps, stepH, stepOff]) =>
+        Array.from({ length: steps }, (_, i) => {
+          const x = startX + i * stepOff;
+          const y = baseY - i * stepH;
+          return {
+            left: x - 18,
+            right: x + 18,
+            top: y - 7,
+            bottom: y + 7,
+          };
+        })
+      );
+
+      // Scoped to power monsters (this epic's new spawns): several legacy
+      // spawns graze solids by 1-4px at rest, which Arcade separation has
+      // always resolved benignly — widening would flag tuned, working data.
+      for (const spawn of def.zombieSpawns) {
+        if (!ZOMBIE.variants[spawn.variant].powerUp || spawn.y !== undefined) continue;
+        const rect = restingBodyRect(spawn);
+        for (const solid of [...platformRects, ...stairRects]) {
+          expect(
+            overlaps(rect, solid),
+            `L${def.levelNumber} ${spawn.variant}@${spawn.x} body overlaps solid at ${solid.left}-${solid.right}, ${solid.top}-${solid.bottom}`
+          ).toBe(false);
         }
       }
     }

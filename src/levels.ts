@@ -92,10 +92,16 @@ const levelOne: LevelDef = {
     [1400, 408, 5, 35, 45],
     [2100, 408, 4, 40, 55],
   ],
-  zombieSpawns: [500, 700, 950, 1250, 1550, 1850, 2150, 2450].map((x, i) => ({
-    x,
-    variant: (i % 3 === 2 ? 'urban' : 'zombie') as ZombieVariant,
-  })),
+  zombieSpawns: [
+    // 880 (not 950): the urban body would spawn enclosing the first stone of
+    // the stair at x=950 — same wedge mode as Level 3's relocated Zanter
+    ...[500, 700, 880, 1250, 1550, 1850, 2150, 2450].map((x, i) => ({
+      x,
+      variant: (i % 3 === 2 ? 'urban' : 'zombie') as ZombieVariant,
+    })),
+    { x: 1700, variant: 'vulture' },
+    { x: 2300, variant: 'rage' },
+  ],
   boss: {
     name: 'MUTATED ZOMBIE',
     hp: 230,
@@ -160,8 +166,10 @@ const levelTwo: LevelDef = {
     { x: 1800, variant: 'disgusting' },
     { x: 1845, variant: 'disgusting' },
     { x: 1890, variant: 'urban' },
+    { x: 1950, variant: 'titan' },
     { x: 2280, variant: 'disgusting' },
     { x: 2320, variant: 'disgusting' },
+    { x: 2600, variant: 'crystal' },
     { x: 2700, variant: 'urban' },
     { x: 2745, variant: 'disgusting' },
   ],
@@ -258,6 +266,7 @@ const levelThree: LevelDef = {
     // would spawn enclosing the second stair stone (x 2884-2920, y 365-379)
     { x: 2560, variant: 'zanter' },
     { x: 2650, variant: 'zombie' },
+    { x: 2760, variant: 'rage' },
   ],
   boss: {
     name: 'DIRT MUTATED ZOMBIE',

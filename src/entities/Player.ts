@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { Assets, PlayerAnims } from '../assets';
-import { COMBAT, PLAYER } from '../config';
+import { BUFF, COMBAT, PLAYER, POWERUPS, SHOP } from '../config';
+import { resolveDamage } from '../core/damage';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
 import { SynthAudio } from '../core/SynthAudio';
-import { afterimage, dustPuff, flashSprite, lit } from '../fx/Effects';
+import { afterimage, dustPuff, flashSprite, floatText, lit } from '../fx/Effects';
 
 export interface AttackEvent {
   hitbox: Phaser.GameObjects.Rectangle;
@@ -47,10 +48,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // Damage state
   private invulnUntil = 0;
   private dying = false;
+  private lastGroundedPos: { x: number; y: number };
+
+  // Buff state
+  private appliedVisualScale = 1;
+  private invincibleTween: Phaser.Tweens.Tween | null = null;
+  private hurtBlinkTween: Phaser.Tweens.Tween | null = null;
+  private aura: Phaser.GameObjects.Image | null = null;
+  private auraColor: number | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, input: InputController) {
     super(scene, x, y, Assets.PLAYER_SHEET, 0);
     this.controls = input;
+    this.lastGroundedPos = { x, y };
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -72,6 +82,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (scene.sys.renderer.type === Phaser.WEBGL) {
       this.lamp = scene.lights.addLight(x, y, 240, 0xffd9a0, 1.1);
+      const bladeTint = this.gameState.currentSword.bladeTint;
+      if (bladeTint) this.swordOverlay.setTint(bladeTint);
     }
   }
 
@@ -84,7 +96,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   get isInvulnerable(): boolean {
-    return this.dashing || this.scene.time.now < this.invulnUntil;
+    return (
+      this.dashing ||
+      this.scene.time.now < this.invulnUntil ||
+      this.gameState.isInvincible(this.scene.time.now)
+    );
   }
 
   get isSlamming(): boolean {
@@ -116,6 +132,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (grounded) {
       this.lastGroundedAt = now;
       this.jumpsLeft = PLAYER.maxJumps;
+      this.lastGroundedPos.x = this.x;
+      this.lastGroundedPos.y = this.y;
     }
 
     // --- Dash ---
@@ -157,6 +175,30 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
+    // --- Flight buff: hold jump to thrust upward, drift down when falling ---
+    const gs = this.gameState;
+    if (gs.canFly(now) && !this.dashing) {
+      const dt = this.scene.game.loop.delta;
+      // Thrust toward the rise cap — jetpack feel. Never touch an ascent
+      // already faster than the cap (fresh jump), or it would brake mid-jump.
+      if (!grounded && this.controls.jumpHeld && body.velocity.y > BUFF.flightRiseVelocity) {
+        this.setVelocityY(
+          Math.max(
+            body.velocity.y + BUFF.flightRiseVelocity * (dt / 1000) * BUFF.flightThrustRamp,
+            BUFF.flightRiseVelocity
+          )
+        );
+      }
+      // Gravity-reduced drift while falling; offsets world gravity down to
+      // flightDriftGravityFactor of normal
+      const drifting = !grounded && body.velocity.y > 0;
+      body.setGravityY(
+        drifting ? -this.scene.physics.world.gravity.y * (1 - BUFF.flightDriftGravityFactor) : 0
+      );
+    } else if (body.gravity.y !== 0) {
+      body.setGravityY(0); // buff ended (or dashing) — never leave the offset behind
+    }
+
     // --- Attack ---
     if (this.controls.attackJustPressed) {
       this.tryAttack();
@@ -168,6 +210,43 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.slamHitbox.setPosition(this.x, this.y + 38);
     }
 
+    // --- Giant mode: scale the sprite, keep the WORLD body ~24x48 with feet
+    // planted. Arcade offsets are frame-local and scale with the sprite: the
+    // unscaled body is setSize(24,48)+setOffset(28,16) on an 80x64 frame, feet
+    // at frame y=64 — so bottom stays put when offsetY = 64 - 48/s, and
+    // offsetX = 28 + (24 - 24/s)/2 keeps it centered.
+    const wantScale = gs.visualScale(now);
+    if (wantScale !== this.appliedVisualScale) {
+      this.appliedVisualScale = wantScale;
+      this.setScale(wantScale);
+      body.setSize(24 / wantScale, 48 / wantScale);
+      body.setOffset(28 + (24 - 24 / wantScale) / 2, 64 - 48 / wantScale);
+    }
+
+    // --- Invincibility: golden alpha-pulse while active ---
+    const invincible = gs.isInvincible(now);
+    if (invincible && !this.invincibleTween) {
+      // A mid-flight hurt blink would feed the pulse a dimmed start alpha
+      if (this.hurtBlinkTween) {
+        this.hurtBlinkTween.stop();
+        this.hurtBlinkTween = null;
+        this.setAlpha(1);
+      }
+      this.invincibleTween = this.scene.tweens.add({
+        targets: this,
+        alpha: 0.55,
+        duration: 130,
+        yoyo: true,
+        repeat: -1,
+      });
+    } else if (!invincible && this.invincibleTween) {
+      this.invincibleTween.stop();
+      this.invincibleTween = null;
+      this.setAlpha(1);
+    }
+
+    this.updateAura(now);
+
     // --- Animation ---
     if (!this.attacking) {
       this.updateAnimation(grounded, body);
@@ -178,9 +257,45 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.swordOverlay.setFlipX(this.flipX);
     this.swordOverlay.setFrame(this.frame.name);
     this.swordOverlay.setAlpha(this.alpha);
+    this.swordOverlay.setScale(wantScale);
     if (this.lamp) {
       this.lamp.setPosition(this.x, this.y - 10);
     }
+  }
+
+  // ONE glow stuck behind the player while any buff is active (or while shield
+  // charges remain — gold). Tint is a WebGL nicety: on Canvas it renders
+  // untinted, which is acceptable — orb + HUD carry the info there.
+  private updateAura(now: number) {
+    const buffs = this.gameState.activeBuffList(now);
+    if (buffs.length === 0 && this.gameState.shieldHits <= 0) {
+      if (this.aura) {
+        this.aura.destroy();
+        this.aura = null;
+        this.auraColor = null;
+      }
+      return;
+    }
+
+    if (!this.aura) {
+      this.aura = this.scene.add.image(this.x, this.y, Assets.GLOW).setAlpha(0.55);
+    }
+
+    // Most-recent buff wins the color (latest expiry = latest grant — all
+    // durations match and refreshes push expiry forward). Shield-only = gold.
+    let color = 0xffd700;
+    if (buffs.length > 0) {
+      const latest = buffs.reduce((a, b) => (b.expiresAt > a.expiresAt ? b : a));
+      color = POWERUPS[latest.type].color;
+    }
+    if (color !== this.auraColor) {
+      this.auraColor = color;
+      if (this.scene.sys.renderer.type === Phaser.WEBGL) this.aura.setTint(color);
+    }
+
+    this.aura.setPosition(this.x, this.y);
+    this.aura.setScale(1.4 * this.appliedVisualScale);
+    this.aura.setDepth(this.depth - 1);
   }
 
   private updateAnimation(grounded: boolean, body: Phaser.Physics.Arcade.Body) {
@@ -252,22 +367,31 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.comboStep = now <= this.comboWindowUntil ? (this.comboStep % 3) + 1 : 1;
     const isFinisher = this.comboStep === 3;
     const damage = Math.floor(
-      this.gameState.swordDamage * COMBAT.comboMultipliers[this.comboStep - 1]
+      this.gameState.swordDamage *
+        COMBAT.comboMultipliers[this.comboStep - 1] *
+        this.gameState.damageMultiplier(now)
     );
 
+    const speed = this.gameState.currentSword.swingSpeed;
     this.attacking = true;
     SynthAudio.swing(this.comboStep);
     this.play(PlayerAnims.ATTACK.key, true);
+    this.anims.timeScale = speed;
     this.once(`animationcomplete-${PlayerAnims.ATTACK.key}`, () => {
+      this.anims.timeScale = 1;
       this.attacking = false;
       this.comboWindowUntil =
         this.scene.time.now + COMBAT.comboWindowMs;
       this.attackReadyAt =
-        this.scene.time.now + (isFinisher ? COMBAT.finisherCooldownMs : COMBAT.swingCooldownMs);
+        this.scene.time.now +
+        (isFinisher ? COMBAT.finisherCooldownMs : COMBAT.swingCooldownMs) / speed;
       if (isFinisher) this.comboStep = 0;
     });
 
-    const reach = COMBAT.hitboxW + (isFinisher ? COMBAT.finisherReachBonus : 0);
+    const reach =
+      COMBAT.hitboxW +
+      this.gameState.currentSword.reachBonus +
+      (isFinisher ? COMBAT.finisherReachBonus : 0);
     const offsetX = this.facing * (18 + reach / 2);
     const hitbox = this.scene.add.rectangle(this.x + offsetX, this.y, reach, COMBAT.hitboxH);
     hitbox.setVisible(false);
@@ -287,11 +411,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.attacking = true;
     SynthAudio.swing(2);
     this.play(PlayerAnims.ATTACK.key, true);
+    this.anims.timeScale = this.gameState.currentSword.swingSpeed;
     this.once(`animationcomplete-${PlayerAnims.ATTACK.key}`, () => {
+      this.anims.timeScale = 1;
       this.attacking = false;
     });
 
-    const damage = Math.floor(this.gameState.swordDamage * COMBAT.slamDamageMultiplier);
+    const damage = Math.floor(
+      this.gameState.swordDamage *
+        COMBAT.slamDamageMultiplier *
+        this.gameState.damageMultiplier(this.scene.time.now)
+    );
     const hitbox = this.scene.add.rectangle(this.x, this.y + 38, 36, 44);
     hitbox.setVisible(false);
     this.scene.physics.add.existing(hitbox, false);
@@ -327,38 +457,127 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.endSlam();
   }
 
+  // NOTE: any future out-of-bounds kill volume (pits, crushers) must route
+  // through takeDamage — never call die() directly, or shields/potions/Extra
+  // Lives in the resolveDamage pipeline won't fire.
   takeDamage(amount: number, fromX: number) {
-    if (this.dying || this.isInvulnerable) return;
-    this.gameState.health -= amount;
+    if (this.dying) return;
+    const gs = this.gameState;
+    const { state, outcome } = resolveDamage(
+      {
+        health: gs.health,
+        maxHealth: gs.maxHealth,
+        potions: gs.potions,
+        shieldHits: gs.shieldHits,
+        lives: gs.lives,
+      },
+      amount,
+      this.isInvulnerable
+    );
+    if (outcome === 'ignored') return; // i-frames/dash: no knockback, no sound
+
+    gs.health = state.health;
+    gs.potions = state.potions;
+    gs.shieldHits = state.shieldHits;
+    gs.lives = state.lives;
+    const spentConsumable =
+      outcome === 'absorbed' || outcome === 'potioned' || outcome === 'revived';
+    if (spentConsumable) gs.save();
+
+    if (outcome === 'revived') {
+      SynthAudio.hurt();
+      this.revive();
+      return;
+    }
+
     this.invulnUntil = this.scene.time.now + PLAYER.hurtInvulnMs;
-    SynthAudio.hurt();
-    flashSprite(this, 0xff4444);
+    if (outcome === 'absorbed') {
+      SynthAudio.shield();
+      flashSprite(this, 0xffd700); // shield gold — no health (red) flash
+    } else {
+      SynthAudio.hurt();
+      flashSprite(this, 0xff4444);
+    }
 
     const dir = this.x < fromX ? -1 : 1;
     this.setVelocity(dir * PLAYER.contactKnockback, -180);
 
     // Invulnerability blink
-    this.scene.tweens.add({
+    this.hurtBlinkTween?.stop();
+    this.hurtBlinkTween = this.scene.tweens.add({
       targets: this,
       alpha: 0.3,
       duration: 90,
       yoyo: true,
       repeat: Math.floor(PLAYER.hurtInvulnMs / 180),
-      onComplete: () => this.setAlpha(1),
+      onComplete: () => {
+        this.setAlpha(1);
+        this.hurtBlinkTween = null;
+      },
     });
 
-    if (this.gameState.health <= 0) {
-      this.gameState.health = 0;
+    if (outcome === 'potioned') {
+      floatText(this.scene, this.x, this.y - 50, 'POTION!', '#ff6688', 14);
+    }
+
+    if (outcome === 'dead') {
       this.die();
     }
   }
 
+  // Extra Life consumed: resolveDamage already restored health — reset the body
+  // and return to the last safe ground with a grace period.
+  revive() {
+    if (this.dying) return;
+    this.gameState.clearBuffs(); // revived player starts clean
+    this.attacking = false;
+    this.anims.timeScale = 1;
+    this.endSlam();
+    if (this.dashing) {
+      this.dashing = false;
+      (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(true);
+      this.setDragX(PLAYER.drag);
+      this.setMaxVelocity(PLAYER.maxRun, 900);
+      this.dashTrailEvent?.remove();
+      this.dashTrailEvent = null;
+    }
+    this.setAccelerationX(0);
+    this.setVelocity(0, 0);
+    this.setAlpha(1);
+    // Giant scale/body must reset NOW, not next update — the bounds clamp
+    // below positions the body at its revive size
+    if (this.appliedVisualScale !== 1) {
+      this.appliedVisualScale = 1;
+      this.setScale(1);
+      const rb = this.body as Phaser.Physics.Arcade.Body;
+      rb.setSize(24, 48);
+      rb.setOffset(28, 16);
+    }
+    // Clamp to the CURRENT physics bounds — the boss arena may have shrunk the
+    // world since the player last stood on the ground.
+    const b = this.scene.physics.world.bounds;
+    const x = Phaser.Math.Clamp(this.lastGroundedPos.x, b.x + 30, b.right - 30);
+    this.setPosition(x, this.lastGroundedPos.y);
+    this.invulnUntil = this.scene.time.now + SHOP.reviveInvulnMs;
+    flashSprite(this, 0xffd700);
+    this.scene.events.emit('player-revived');
+  }
+
   private die() {
     this.dying = true;
+    this.attacking = false;
+    this.anims.timeScale = 1;
     this.endSlam();
     this.dashTrailEvent?.remove();
     this.setAccelerationX(0);
     this.setVelocityX(0);
+    // update() stops running while dying — tear down buff visuals here
+    this.invincibleTween?.stop();
+    this.invincibleTween = null;
+    this.aura?.destroy();
+    this.aura = null;
+    this.auraColor = null;
+    (this.body as Phaser.Physics.Arcade.Body).setGravityY(0);
     this.setAlpha(1);
     this.play(PlayerAnims.DEATH.key, true);
     this.once(`animationcomplete-${PlayerAnims.DEATH.key}`, () => {
@@ -368,6 +587,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   override destroy(fromScene?: boolean) {
     this.swordOverlay?.destroy();
+    this.aura?.destroy();
+    this.aura = null;
+    this.invincibleTween?.stop();
+    this.invincibleTween = null;
     if (this.lamp && this.scene) this.scene.lights.removeLight(this.lamp);
     super.destroy(fromScene);
   }
