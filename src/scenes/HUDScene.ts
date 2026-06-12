@@ -14,6 +14,10 @@ export class HUDScene extends Phaser.Scene {
   private coinText!: Phaser.GameObjects.Text;
   private lastCoins = -1;
   private keyIcons: Phaser.GameObjects.Image[] = [];
+  private consumableRow!: Phaser.GameObjects.Container;
+  private consumableCounts: Phaser.GameObjects.Text[] = [];
+  private lastConsumableCounts = [-1, -1, -1];
+  private consumablesShown = false;
   private comboText!: Phaser.GameObjects.Text;
   private comboBar!: Phaser.GameObjects.Rectangle;
 
@@ -26,6 +30,9 @@ export class HUDScene extends Phaser.Scene {
     this.ghostHealth = this.gameState.health;
     this.lastCoins = -1;
     this.keyIcons = [];
+    this.consumableCounts = [];
+    this.lastConsumableCounts = [-1, -1, -1];
+    this.consumablesShown = false;
 
     // Panel
     this.add.rectangle(14, 14, 246, 74, 0x000000, 0.45).setOrigin(0);
@@ -51,6 +58,33 @@ export class HUDScene extends Phaser.Scene {
       this.add.rectangle(x, 62, 20, 26, 0x111111, 0.8).setStrokeStyle(1, 0x665522);
       this.keyIcons.push(this.add.image(x, 62, Assets.KEY).setScale(0.6).setVisible(false));
     }
+
+    // Consumables row (latches visible once any consumable appears this scene)
+    const countStyle = {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 4,
+    };
+    this.consumableRow = this.add.container(0, 0);
+    this.consumableRow.add(this.add.rectangle(14, 92, 246, 24, 0x000000, 0.45).setOrigin(0));
+
+    const consumableSlots = [
+      { icon: Assets.SHOP_ICON_POTION, x: 32, color: '#ff7788' },
+      { icon: Assets.SHOP_ICON_SHIELD, x: 106, color: '#bbddff' },
+      { icon: Assets.SHOP_ICON_LIFE, x: 180, color: '#ffdd55' },
+    ];
+    consumableSlots.forEach(({ icon, x, color }) => {
+      this.consumableRow.add(this.add.image(x, 104, icon).setScale(1.3));
+      const text = this.add
+        .text(x + 14, 104, '0', { ...countStyle, color })
+        .setOrigin(0, 0.5);
+      this.consumableCounts.push(text);
+      this.consumableRow.add(text);
+    });
+    this.consumableRow.setVisible(false);
 
     // Combo meter (hidden until streak >= 2)
     this.comboText = this.add
@@ -98,6 +132,22 @@ export class HUDScene extends Phaser.Scene {
     }
 
     this.gameState.keys.forEach((has, i) => this.keyIcons[i].setVisible(has));
+
+    const consumableCounts = [
+      this.gameState.potions,
+      this.gameState.shieldHits,
+      this.gameState.lives,
+    ];
+    if (!this.consumablesShown && consumableCounts.some((count) => count > 0)) {
+      this.consumablesShown = true;
+      this.consumableRow.setVisible(true);
+    }
+    consumableCounts.forEach((count, i) => {
+      if (count !== this.lastConsumableCounts[i]) {
+        this.consumableCounts[i].setText(`${count}`);
+        this.lastConsumableCounts[i] = count;
+      }
+    });
 
     const streak = this.gameState.currentStreak(time);
     if (streak >= 2) {
