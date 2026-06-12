@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { ZombieAnims, ZombieAnimSet } from '../assets';
-import { ZOMBIE, ZombieVariant, ZombieVariantDef } from '../config';
+import { PowerUpType, ZOMBIE, ZombieVariant, ZombieVariantDef } from '../config';
 import { SynthAudio } from '../core/SynthAudio';
 import { dustPuff, flashSprite, floatText, knockback, lit } from '../fx/Effects';
 
@@ -38,10 +38,16 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
 
   constructor(scene: Phaser.Scene, x: number, y: number, variant: ZombieVariant = 'zombie') {
     const v: ZombieVariantDef = ZOMBIE.variants[variant];
-    super(scene, x, y, v.base === 'urban' ? 'urban-idle-sheet' : 'zombie-idle-sheet', 0);
+    super(
+      scene,
+      x,
+      y,
+      v.sheet ? `${v.sheet}-idle` : v.base === 'urban' ? 'urban-idle-sheet' : 'zombie-idle-sheet',
+      0
+    );
     this.variant = variant;
     this.vdef = v;
-    this.anims_ = ZombieAnims[v.base];
+    this.anims_ = ZombieAnims[v.animSet ?? v.base];
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -75,6 +81,11 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
 
   get isLunging(): boolean {
     return this.state_ === ZombieState.LUNGE;
+  }
+
+  // Buff orb this monster drops on death (undefined for regular zombies)
+  get powerUp(): PowerUpType | undefined {
+    return this.vdef.powerUp;
   }
 
   takeDamage(amount: number) {

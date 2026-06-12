@@ -1,5 +1,7 @@
 // Every gameplay tunable in one place — tweak here, not in entity code.
 
+import type { ZombieAnimSetKey } from './assets';
+
 export const GAME_W = 960;
 export const GAME_H = 540;
 
@@ -8,7 +10,15 @@ export const WORLD = {
   groundY: 476, // top surface of the ground
 };
 
-export type ZombieVariant = 'zombie' | 'urban' | 'disgusting' | 'zanter';
+export type ZombieVariant =
+  | 'zombie'
+  | 'urban'
+  | 'disgusting'
+  | 'zanter'
+  | 'vulture'
+  | 'rage'
+  | 'titan'
+  | 'crystal';
 
 export interface ZombieVariantDef {
   base: 'zombie' | 'urban'; // which sprite pack + body size to use
@@ -18,6 +28,13 @@ export interface ZombieVariantDef {
   patrolSpeed: number;
   chaseSpeed: number;
   contactDamage: number;
+  // Power monsters: drop this buff orb on death (Task 14 wires the drop).
+  powerUp?: PowerUpType;
+  // Baked sheet key prefix — textures register as `${sheet}-idle/walk/attack/hurt/dead`.
+  // sheet and animSet are PAIRED: a variant with sheet but no animSet snaps back
+  // to the base sheet on the first play() call (anims are bound to texture keys).
+  sheet?: string;
+  animSet?: ZombieAnimSetKey;
 }
 
 export const PLAYER = {
@@ -119,7 +136,13 @@ export const ZOMBIE = {
     urban:      { base: 'urban',  hp: 50, scale: 1,    patrolSpeed: 55, chaseSpeed: 95,  contactDamage: 8 },
     disgusting: { base: 'zombie', hp: 45, tint: 0x7fd16a, scale: 1.06, patrolSpeed: 65, chaseSpeed: 118, contactDamage: 10 },
     zanter:     { base: 'urban',  hp: 95, tint: 0xcdb892, scale: 1.45, patrolSpeed: 40, chaseSpeed: 72,  contactDamage: 14 },
-  } satisfies Record<ZombieVariant, ZombieVariantDef>,
+    // Power monsters (Henry renames later): elite zombies with baked sheets that
+    // drop a buff orb. sheet + animSet must stay paired (see ZombieVariantDef).
+    vulture: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 60, chaseSpeed: 110, contactDamage: 10, powerUp: 'flight',     sheet: 'pm-vulture', animSet: 'pm-vulture' },
+    rage:    { base: 'zombie', hp: 80,  scale: 1.05, patrolSpeed: 70, chaseSpeed: 125, contactDamage: 12, powerUp: 'megaDamage', sheet: 'pm-rage',    animSet: 'pm-rage' },
+    titan:   { base: 'urban',  hp: 110, scale: 1.5,  patrolSpeed: 38, chaseSpeed: 65,  contactDamage: 14, powerUp: 'giant',      sheet: 'pm-titan',   animSet: 'pm-titan' },
+    crystal: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 55, chaseSpeed: 100, contactDamage: 10, powerUp: 'invincible', sheet: 'pm-crystal', animSet: 'pm-crystal' },
+  } satisfies Record<ZombieVariant, ZombieVariantDef> as Record<ZombieVariant, ZombieVariantDef>,
 };
 
 // Shared boss physics — per-boss stats (hp, speeds, damage, attack intervals)

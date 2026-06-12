@@ -19,6 +19,34 @@ describe('zombie variant table', () => {
   });
 });
 
+describe('power-monster variants', () => {
+  const POWER_VARIANTS = ['vulture', 'rage', 'titan', 'crystal'] as const;
+
+  it('every variant with a powerUp has BOTH sheet and animSet, and the animSet exists', () => {
+    for (const [name, v] of Object.entries(ZOMBIE.variants)) {
+      if (v.powerUp === undefined) continue;
+      expect(v.sheet, `${name} sheet`).toBeDefined();
+      expect(v.animSet, `${name} animSet`).toBeDefined();
+      expect(ZombieAnims[v.animSet!], `${name} anim set entry`).toBeDefined();
+    }
+  });
+
+  it('power monsters are elites: hp >= 80', () => {
+    for (const name of POWER_VARIANTS) {
+      expect(ZOMBIE.variants[name].hp, `${name} hp`).toBeGreaterThanOrEqual(80);
+    }
+  });
+
+  it('all four PowerUpTypes are covered by exactly the 4 new variants', () => {
+    const powered = Object.entries(ZOMBIE.variants).filter(([, v]) => v.powerUp !== undefined);
+    expect(powered.map(([name]) => name).sort()).toEqual([...POWER_VARIANTS].sort());
+    const types = powered.map(([, v]) => v.powerUp).sort();
+    expect(types).toEqual(
+      (['flight', 'megaDamage', 'giant', 'invincible'] satisfies PowerUpType[]).sort()
+    );
+  });
+});
+
 describe('SWORDS', () => {
   it('has 5 tiers, tier 0 free, costs and damage strictly increasing', () => {
     expect(SWORDS).toHaveLength(5);

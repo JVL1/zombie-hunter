@@ -110,7 +110,17 @@ export interface ZombieAnimSet {
   dead: string;
 }
 
-export const ZombieAnims: Record<'zombie' | 'urban', ZombieAnimSet> = {
+// Anim-set keys: base sprite families plus the baked power-monster variants.
+// Keep this a closed union — Zombie picks sets by key, no record widening.
+export type ZombieAnimSetKey =
+  | 'zombie'
+  | 'urban'
+  | 'pm-vulture'
+  | 'pm-rage'
+  | 'pm-titan'
+  | 'pm-crystal';
+
+export const ZombieAnims: Record<ZombieAnimSetKey, ZombieAnimSet> = {
   zombie: {
     idle: 'zombie-idle',
     walk: 'zombie-walk',
@@ -124,5 +134,33 @@ export const ZombieAnims: Record<'zombie' | 'urban', ZombieAnimSet> = {
     attack: 'urban-attack',
     hurt: 'urban-hurt',
     dead: 'urban-dead',
+  },
+  'pm-vulture': {
+    idle: 'pm-vulture-idle',
+    walk: 'pm-vulture-walk',
+    attack: 'pm-vulture-attack',
+    hurt: 'pm-vulture-hurt',
+    dead: 'pm-vulture-dead',
+  },
+  'pm-rage': {
+    idle: 'pm-rage-idle',
+    walk: 'pm-rage-walk',
+    attack: 'pm-rage-attack',
+    hurt: 'pm-rage-hurt',
+    dead: 'pm-rage-dead',
+  },
+  'pm-titan': {
+    idle: 'pm-titan-idle',
+    walk: 'pm-titan-walk',
+    attack: 'pm-titan-attack',
+    hurt: 'pm-titan-hurt',
+    dead: 'pm-titan-dead',
+  },
+  'pm-crystal': {
+    idle: 'pm-crystal-idle',
+    walk: 'pm-crystal-walk',
+    attack: 'pm-crystal-attack',
+    hurt: 'pm-crystal-hurt',
+    dead: 'pm-crystal-dead',
   },
 };

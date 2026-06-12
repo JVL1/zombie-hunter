@@ -3,6 +3,7 @@ import { generateCityTextures } from '../art/city';
 import { generateCommonTextures } from '../art/common';
 import { generateForestTextures } from '../art/forest';
 import { bakeTint } from '../art/helpers';
+import { generatePowerMonsterSheets, registerPowerMonsterAnims } from '../art/powerMonsters';
 import { generateRailTextures } from '../art/rail';
 import { generateShopTextures } from '../art/shop';
 import { Assets, PlayerAnims } from '../assets';
@@ -72,6 +73,10 @@ export class PreloadScene extends Phaser.Scene {
 
   create() {
     this.createAnimations();
+    // Power monsters: bake variant sheets FIRST, then register their anims —
+    // generateFrameNumbers on a not-yet-baked sheet key fails.
+    generatePowerMonsterSheets(this);
+    registerPowerMonsterAnims(this);
     generateCommonTextures(this);
     generateCityTextures(this);
     generateForestTextures(this);
