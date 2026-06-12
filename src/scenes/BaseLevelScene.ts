@@ -646,7 +646,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.controls.update();
 
-    if (!this.cinematic) {
+    if (this.cinematic) {
+      // Slide buff expiries forward every frozen frame — giant/aura effects
+      // must never flicker off mid-cutscene.
+      this.gameState.extendBuffs(delta, this.time.now);
+    } else {
       this.player.update();
     }
 
