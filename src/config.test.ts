@@ -22,11 +22,12 @@ describe('zombie variant table', () => {
 describe('power-monster variants', () => {
   const POWER_VARIANTS = ['vulture', 'rage', 'titan', 'crystal'] as const;
 
-  it('every variant with a powerUp has BOTH sheet and animSet, and the animSet exists', () => {
+  it('every variant with a powerUp has sheet, animSet, and bakeColor, and the animSet exists', () => {
     for (const [name, v] of Object.entries(ZOMBIE.variants)) {
       if (v.powerUp === undefined) continue;
       expect(v.sheet, `${name} sheet`).toBeDefined();
       expect(v.animSet, `${name} animSet`).toBeDefined();
+      expect(v.bakeColor, `${name} bakeColor`).toBeDefined();
       expect(ZombieAnims[v.animSet!], `${name} anim set entry`).toBeDefined();
     }
   });

@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
-import { Assets } from '../assets';
-import { ZOMBIE } from '../config';
+import { Assets, ZombieAnims } from '../assets';
+import { ZOMBIE, type ZombieVariantDef } from '../config';
 import { bakeSheet } from './helpers';
 
 // Power-monster variant sheets, BAKED (not runtime-tinted) so they read on the
@@ -30,34 +30,18 @@ const SRC_SHEETS: Record<'zombie' | 'urban', Record<AnimName, string>> = {
 
 const FRAME_SIZE: Record<'zombie' | 'urban', number> = { zombie: 96, urban: 128 };
 
-// Multiply-tint colors per power variant
-const VARIANT_COLORS: Record<string, string> = {
-  vulture: '#5a3a8a', // dark purple
-  rage: '#aa2222', // red
-  titan: '#8a8a7a', // stone
-  crystal: '#3ad8cc', // cyan
-};
+// One predicate decides what gets baked AND what gets anims — keeping the two
+// passes symmetric (a variant baked but never animated, or vice versa, is the
+// invisible-monster failure mode).
+function bakedVariantEntries(): [string, ZombieVariantDef][] {
+  return Object.entries(ZOMBIE.variants).filter(
+    ([, v]) => v.sheet && v.animSet && v.bakeColor !== undefined
+  );
+}
 
-// Same frame counts / rates as PreloadScene.createAnimations for each base family
-const ANIM_DEFS: Record<
-  'zombie' | 'urban',
-  Record<AnimName, { end: number; frameRate: number; repeat: number }>
-> = {
-  zombie: {
-    idle: { end: 7, frameRate: 6, repeat: -1 },
-    walk: { end: 7, frameRate: 8, repeat: -1 },
-    attack: { end: 4, frameRate: 10, repeat: 0 },
-    hurt: { end: 2, frameRate: 10, repeat: 0 },
-    dead: { end: 4, frameRate: 8, repeat: 0 },
-  },
-  urban: {
-    idle: { end: 5, frameRate: 6, repeat: -1 },
-    walk: { end: 9, frameRate: 8, repeat: -1 },
-    attack: { end: 4, frameRate: 10, repeat: 0 },
-    hurt: { end: 3, frameRate: 10, repeat: 0 },
-    dead: { end: 4, frameRate: 8, repeat: 0 },
-  },
-};
+function cssColor(tint: number): string {
+  return `#${tint.toString(16).padStart(6, '0')}`;
+}
 
 // Dark wing triangles painted BEHIND the body pixels (destination-over keeps
 // the zombie on top; wings show where they poke past the silhouette).
@@ -102,10 +86,8 @@ function drawShards(ctx: CanvasRenderingContext2D, w: number, h: number, fs: num
 // ZOMBIE.variants that declares a baked sheet. Must run AFTER the base zombie
 // spritesheets have loaded (bakeSheet early-returns on a missing source).
 export function generatePowerMonsterSheets(scene: Phaser.Scene): void {
-  for (const [name, v] of Object.entries(ZOMBIE.variants)) {
-    if (!v.sheet || !v.animSet) continue;
-    const color = VARIANT_COLORS[name];
-    if (!color) continue;
+  for (const [name, v] of bakedVariantEntries()) {
+    const color = cssColor(v.bakeColor!);
     const fs = FRAME_SIZE[v.base];
     for (const anim of ANIM_NAMES) {
       const srcKey = SRC_SHEETS[v.base][anim];
@@ -135,20 +117,21 @@ export function generatePowerMonsterSheets(scene: Phaser.Scene): void {
 
 // Registers the pm-{variant}-{anim} animations. MUST run after
 // generatePowerMonsterSheets — generateFrameNumbers on a not-yet-baked sheet
-// key fails. Frame counts/rates clone the variant's base family.
+// key fails. Frame counts/rates/repeat are read from the REGISTERED base-family
+// anims at runtime (no hand-copied table to drift when the base anims change),
+// which also requires running after createAnimations().
 export function registerPowerMonsterAnims(scene: Phaser.Scene): void {
-  for (const v of Object.values(ZOMBIE.variants)) {
-    if (!v.sheet || !v.animSet) continue;
+  for (const [, v] of bakedVariantEntries()) {
     for (const anim of ANIM_NAMES) {
-      const def = ANIM_DEFS[v.base][anim];
+      const base = scene.anims.get(ZombieAnims[v.base][anim]);
       scene.anims.create({
         key: `${v.animSet}-${anim}`,
         frames: scene.anims.generateFrameNumbers(`${v.sheet}-${anim}`, {
           start: 0,
-          end: def.end,
+          end: base.frames.length - 1,
         }),
-        frameRate: def.frameRate,
-        repeat: def.repeat,
+        frameRate: base.frameRate,
+        repeat: base.repeat,
       });
     }
   }
