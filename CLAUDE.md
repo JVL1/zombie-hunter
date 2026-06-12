@@ -26,26 +26,28 @@ Rebuild design doc: `docs/plans/2026-06-10-rebuild-v2-design.md`. 960×540 (16:9
 
 ### Scene Flow
 ```
-PreloadScene → MainMenuScene → Level1 → Victory → Level2 → Victory → Level3 (+ HUD overlay) → Victory/GameOver → MainMenu/retry
+PreloadScene → MainMenuScene → Level1 → Victory → Shop → Level2 → Victory → Shop → Level3 (+ HUD overlay) → Victory/GameOver → MainMenu/retry
 ```
-Victory advances along each level's `nextSceneKey`; GameOver retries `GameState.currentLevel`. MainMenu number keys 1-N replay any level up to `maxUnlockedLevel`.
+Victory routes through `ShopScene` whenever the level's `nextSceneKey` isn't `'MainMenu'` (the final built level goes straight back to the menu); the shop's HEAD OUT door starts the next level. GameOver retries `GameState.currentLevel` (buffs cleared, consumables retained). MainMenu number keys 1-N replay any level up to `maxUnlockedLevel` — replays still route through the shop.
 
 ### Layout
 
 - **`src/levels.ts`** — data-driven level registry (Phaser-free; vitest imports it). Each `LevelDef` holds world size, parallax/texture keys, platforms/stairs, zombie spawns (with optional explicit `y` for elevated spawns), a `BossDef` (stats, tint, charge/leap flags, optional minion `summon`), and boss-arena geometry. `TRAIN` exports Level 3's train layout. Layout gotchas are enforced by `levels.test.ts` invariants — new level data gets validated for free.
-- **`src/config.ts`** — every gameplay tunable (player physics, combat, zombie/boss AI, `ZOMBIE.variants` tint/scale/stat table). Tune here or in the level def, not in entity code. `WORLD.width` no longer exists — width is per-level (`def.worldWidth`).
-- **`src/core/`** — `InputController` (keyboard+gamepad, edge detection, jump buffering), `Juice` (hit-stop, shake, zoom punch, slow-mo), `SynthAudio` (ALL audio is WebAudio-synthesized — no audio files; call `unlock()` from a user gesture first), `GameState` (singleton; coins/keys/bestStreak persist via localStorage).
+- **`src/config.ts`** — every gameplay tunable (player physics, combat, zombie/boss AI, `ZOMBIE.variants` tint/scale/stat table — power-monster variants add `powerUp` + `bakeColor`). Also the shop/power-up data tables: `SWORDS` (tier list), `CONSUMABLES` (potion/shield/life cost+cap), `SHOP`, `POWERUPS` (per-buff name/duration/color), `BUFF` (flight/giant/damage tunables). Tune here or in the level def, not in entity code.
+- **`src/core/`** — `InputController` (keyboard+gamepad, edge detection, jump buffering, menu-nav primitives with OS key-repeat filtering), `Juice` (hit-stop, shake, zoom punch, slow-mo), `SynthAudio` (ALL audio is WebAudio-synthesized — no audio files; call `unlock()` from a user gesture first), `GameState` (singleton; coins/keys/bestStreak/purchases/consumables persist via hardened localStorage save — `load()` clamps corrupt values; buff runtime: `grantBuff`/`buffActive`/`activeBuffList(now)`/`extendBuffs(ms, now)`/`clearBuffs`, plus `consumableState(kind)` for shop/HUD display), `damage.ts` (pure `resolveDamage` — the single damage pipeline: i-frames → shield → HP → auto-potion below 30% → extra-life revive → dead; vitest-covered matrix).
 - **`src/fx/`** — `Effects` (flashSprite, knockback, afterimage, shockwave, floatText, `lit()` Light2D helper), `Splatter` (GoreSystem: particle bursts + persistent blood decals on a world-sized RenderTexture).
 - **`src/entities/`** — `Player` (coyote time, jump buffer, double jump, dash with i-frames, 3-hit combo, air slam with pogo), `Zombie` (patrol/chase/telegraphed-lunge state machine + jump-fail comedy), `Boss` (SITTING→RISING→FIGHTING→CHARGE/LEAP→DEAD, enrages at 50% HP), `Pickups` (coin/heart/key, coins magnet to player).
-- **`src/art/`** — procedural texture packs: `helpers.ts` (`bakeTint` re-tints a single image, `bakeSheet` bakes a draw-callback over a spritesheet and registers numbered frames 0..n), `common.ts` (level-agnostic: sky/moon/pickups/particles/decals), plus one `{theme}.ts` per level theme (`city`, `forest`, `rail`), each exporting `generate{Theme}Textures(scene)`.
-- **`src/scenes/`** — `PreloadScene` loads sprites, registers animations, then invokes every `src/art/` generator and the `bakeTint` parallax re-tints from `create()` (defining without invoking = invisible textures; baking is canvas-renderer-safe). `BaseLevelScene` owns all generic level logic (combat wiring, boss encounter incl. summons, pickups, parallax/fog, update loop) driven by a `LevelDef`; `Level1/2/3Scene` are thin theme subclasses overriding `buildBackdrop`/`buildTerrain`/`buildAmbience`.
+- **`src/art/`** — procedural texture packs: `helpers.ts` (`bakeTint` re-tints a single image, `bakeSheet` bakes a draw-callback over a spritesheet and registers numbered frames 0..n), `common.ts` (level-agnostic: sky/moon/pickups/power orbs/particles/decals), one `{theme}.ts` per level theme (`city`, `forest`, `rail`), `shop.ts` (shop props + HUD consumable icons), and `powerMonsters.ts` (bakes the 4 power-monster variant sheets from `bakeColor` and exposes `bakedVariantEntries()` — the single predicate both the bake and anim-registration passes use).
+- **`src/scenes/`** — `PreloadScene` loads sprites, registers animations, then invokes every `src/art/` generator and the `bakeTint` parallax re-tints from `create()` (defining without invoking = invisible textures; baking is canvas-renderer-safe; power-monster anims derive from the REGISTERED base anims, so their registration must stay after `createAnimations()` + `generatePowerMonsterSheets()`). `BaseLevelScene` owns all generic level logic (combat wiring, boss encounter incl. summons, pickups/orbs, parallax/fog, update loop) driven by a `LevelDef`; `Level1/2/3Scene` are thin theme subclasses overriding `buildBackdrop`/`buildTerrain`/`buildAmbience`. `ShopScene` is the between-levels hub (Blacksmith sword tiers + Apocalypse consumables; arrow-key nav, ↑ never exits).
 
 ### Key Patterns
 
 - **Sword combat**: Player emits `'player-attack'` / `'player-slam'` scene events with a hitbox + damage payload. Level scene wires overlaps; per-swing `hitSet` prevents multi-hits; colliders destroyed with the hitbox.
 - **Scene event listeners**: BaseLevelScene.create() calls `this.events.off(...)` for its custom events FIRST — scene restarts reuse the same EventEmitter and listeners stack otherwise.
 - **Contact damage**: overlap + cooldown Map; player has post-hit i-frames and dash i-frames.
-- **Boss cinematic**: letterbox bars + camera pan + world/camera bounds locked to the arena; surviving zombies destroyed before bounds shrink.
+- **Boss cinematic**: letterbox bars + camera pan + world/camera bounds locked to the arena; surviving zombies destroyed before bounds shrink, uncollected power orbs magnetize to the player first (never stranded), and active buff expiries slide forward every frozen frame (`extendBuffs(delta, now)` — continuous, so giant/aura effects never flicker mid-cutscene).
+- **Power monsters & buffs**: `ZOMBIE.variants` entries with a `powerUp` use color-baked sprite sheets (Canvas-safe); killing one drops a buff orb (`Pickup` kind `'orb'`); collecting grants a ~10s buff (flight / mega damage / giant ×1.35 with feet-planted body math / invincibility) with a glow aura on the player and a draining countdown slot in the HUD. Buffs clear on revive and on retry.
+- **Shop & damage pipeline**: all purchase rules live in `GameState` (data from `SWORDS`/`CONSUMABLES` in config.ts); all hit resolution goes through pure `resolveDamage` in `src/core/damage.ts` — never hand-roll shield/potion/revive logic in entity code. Extra Life revives in place at the last grounded spot (clamped to current physics bounds, so boss-arena revives stay inside).
 - **Testing hook**: `window.game` is exposed; playtest by dispatching synthetic KeyboardEvents and inspecting scene objects via `agent-browser eval`.
 
 ### Controls
@@ -58,8 +60,8 @@ Arrows move, ↑/Space/W jump (double jump), A/J attack (3-hit combo; in air whi
 2. Add theme textures: create `src/art/{theme}.ts` exporting `generate{Theme}Textures(scene)` + `bakeTint` parallax re-tints, both invoked from `PreloadScene.create()` (defining without invoking = invisible textures), and extend the export-shape test in `src/art/art.test.ts`
 3. Create `src/scenes/Level{N}Scene.ts` extending `BaseLevelScene` — `constructor() { super(levelByNumber(N)); }` plus `buildBackdrop`/`buildTerrain`/`buildAmbience` overrides for theme props only (geometry belongs in the def; use the optional per-spawn `y` for elevated spawns)
 4. Register it in `src/main.ts` scene array
-5. `npm test` — the layout invariants validate the new def automatically
-6. (Backlog: shops between levels for sword upgrades — a separate post-Level-3 milestone; level transitions are intentionally shopless for now)
+5. `npm test` — the layout invariants validate the new def automatically (including power-monster placement rules: all 4 buff types must appear somewhere, spawns must sit well before the boss trigger and clear of solids at rest)
+6. Shop routing is automatic — Victory sends every non-final level through `ShopScene`, so flipping the previous level's `nextSceneKey` is all the wiring a new level needs
 
 ## Game Design
 
@@ -73,11 +75,13 @@ v2 rebuild: `docs/plans/2026-06-10-rebuild-v2-design.md`
   - **Level 2 — The Broken Down Forest**: horde packs of disgusting zombies, fireflies/moonbeams/dead trees, ZOMBIE PACK KING (charges + summons minions, capped)
   - **Level 3 — The Abandoned Railroad**: parked-but-"moving" train fought across boxcar roofs (speed lines, smoke, zombie driver gag), giant Zanters that can't fit under the train, DIRT MUTATED ZOMBIE
 - Zombie variants (`disgusting`, `zanter`) as tint/scale/stat entries in `ZOMBIE.variants`; bosses are data-driven `BossDef`s with optional minion summons
+- **Shop hub between levels** (Blacksmith sword tiers + Apocalypse consumables: potions/shields/extra lives), hardened save/load, pure `resolveDamage` pipeline with auto-potion + in-place Extra Life revive, HUD consumable row
+- **Power monsters**: 4 baked-color zombie variants (`vulture`/`rage`/`titan`/`crystal` — Henry will name them properly) spawn across Levels 1-3; kills drop buff orbs granting flight / mega damage / giant mode / invincibility with HUD countdowns; orbs magnetize to the player when the boss triggers
 - Advanced graphics: dynamic lighting, postFX, persistent gore decals, baked parallax palettes per level, hit-stop/screen-shake juice
 - Synthesized SFX + ambient music (no audio files)
-- Verified by automated browser playtest: full 3-level progression, persistence/replay/edge cases (Canvas) + lights/tints/FX pass (headed WebGL), 38 vitest invariants
+- Verified by automated browser playtest: full 3-level progression incl. shop purchases/persistence, power-monster orb→buff→HUD flow, revive edge cases (Canvas) + lights/tints/FX pass (headed WebGL), 100 vitest invariants
 
-**Next milestones:** shops between levels, Level 4, more difficulty tuning with Henry
+**Next milestones:** Henry names the power monsters, Level 4, more difficulty tuning with Henry
 
 ## Gotchas
 
