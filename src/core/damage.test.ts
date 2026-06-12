@@ -57,6 +57,14 @@ describe('resolveDamage', () => {
     expect(result.state).toEqual(baseState({ health: 0 }));
   });
 
+  it('does not auto-drink at exactly the threshold (strict less-than)', () => {
+    const threshold = SHOP.potionAutoThreshold * 100; // 30 for maxHealth 100
+    const result = resolveDamage(baseState({ health: threshold + 16, potions: 1 }), 16, false);
+
+    expect(result.outcome).toBe('hurt');
+    expect(result.state).toEqual(baseState({ health: threshold, potions: 1 }));
+  });
+
   it('auto-drinks a potion when a non-lethal hit drops health below the threshold', () => {
     const result = resolveDamage(baseState({ health: 40, potions: 1 }), 16, false);
 

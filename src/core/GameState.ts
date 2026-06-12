@@ -96,10 +96,12 @@ export class GameState {
       if (this.lives >= item.cap) return false;
       this.coins -= item.cost;
       this.lives += 1;
-    } else {
+    } else if (kind === 'shield') {
       if (this.shieldHits !== 0) return false;
       this.coins -= item.cost;
       this.shieldHits = SHOP.shieldCharges;
+    } else {
+      return false;
     }
 
     this.save();

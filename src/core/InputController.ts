@@ -41,7 +41,7 @@ export class InputController {
     this.keyA = kb.addKey(Phaser.Input.Keyboard.KeyCodes.A);
     this.keyJ = kb.addKey(Phaser.Input.Keyboard.KeyCodes.J);
     this.keyW = kb.addKey(Phaser.Input.Keyboard.KeyCodes.W);
-    this.keyEnter = kb.addKey('ENTER');
+    this.keyEnter = kb.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
 
     if (scene.input.gamepad) {
       if (scene.input.gamepad.total > 0) {
@@ -70,8 +70,10 @@ export class InputController {
     const padLeft = this.pad ? this.pad.left || padX < -0.3 : false;
     const padRight = this.pad ? this.pad.right || padX > 0.3 : false;
     const padDown = this.pad ? this.pad.down || padY > 0.5 : false;
+    // Menu nav uses a deliberately stiffer 0.5 stick threshold than gameplay
+    // left/right (0.3) so a drifting stick doesn't skip shop selections.
     const padMenuUp = this.pad ? this.pad.up || padY < -0.5 : false;
-    const padMenuDown = this.pad ? this.pad.down || padY > 0.5 : false;
+    const padMenuDown = padDown;
     const padMenuLeft = this.pad ? this.pad.left || padX < -0.5 : false;
     const padMenuRight = this.pad ? this.pad.right || padX > 0.5 : false;
     const padJump = this.pad ? this.pad.A : false;
