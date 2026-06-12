@@ -1,6 +1,6 @@
 # Shop Hub & Power Monsters — Design
 
-**Date:** 2026-06-11
+**Date:** 2026-06-11 (revised after round-1 multi-reviewer design review)
 **Status:** Approved by Josh (with Henry's creative direction)
 **Scope:** Three phases — art extraction (tech debt), the between-levels Shop Hub, and Henry's power-up monsters.
 
@@ -20,7 +20,7 @@ Pure refactor, no behavior change.
 
 | New file | Contents |
 |---|---|
-| `src/art/helpers.ts` | Shared canvas utilities + `bakeTint(scene, srcKey, destKey, tint)` as a free function |
+| `src/art/helpers.ts` | Shared canvas utilities + `bakeTint(scene, srcKey, destKey, tint)` as a free function + a **spritesheet-baking helper** (`bakeSheet`: re-bakes a loaded spritesheet with a canvas transform — tint/overlay — and re-registers it under a new key with the same frame config; needed by Phase 3) |
 | `src/art/common.ts` | Level-agnostic textures currently inside `generateTextures()` (player particles, coin/heart/key, decals, generic particles) |
 | `src/art/city.ts` | Level 1 theme pack (`generateCityTextures(scene)`) |
 | `src/art/forest.ts` | Level 2 theme pack (from `generateForestTextures`) |
@@ -28,60 +28,99 @@ Pure refactor, no behavior change.
 
 - Each module exports one `generate{Theme}Textures(scene: Phaser.Scene)` function; methods become free functions taking the scene.
 - `PreloadScene` shrinks to: load sprites → call generators → bake parallax tints. The "Adding a New Level" recipe in CLAUDE.md changes step 2 to "add `src/art/{theme}.ts`".
+- **Pre-commit hook note:** the hook requires tests written + run in the session. Phase 1 adds a small vitest (art module export-shape: each theme module exports exactly one `generate*Textures` function) so the refactor commit passes the gate honestly.
 - **Verification:** `npx tsc --noEmit`, full vitest suite, browser playtest of all three levels (headed WebGL pass for tints, per the canvas-tint gotcha).
 
 ## Phase 2 — The Shop Hub
 
-### Flow
+### Flow — exact contract
 
 ```
 Victory → ShopScene → next level
 ```
 
-- Shop appears whenever Victory advances to another level. After the final built level (Victory → MainMenu) it is skipped.
+- `VictoryScene` keeps its current order: call `gs.advanceLevel()` **first**, then `scene.start('Shop')` — but only when the level's `nextSceneKey !== 'MainMenu'`; after the final built level the shop is skipped. Because the save advances before the shop opens, quitting mid-shop is safe.
+- `ShopScene`'s "HEAD OUT →" starts `gs.currentLevelDef.sceneKey` (the already-advanced level).
+- `ShopScene` is registered in the scene array in `src/main.ts`.
 - GameOver/retry flow untouched. Replaying an earlier level and winning still routes through the shop, so the shop stays reachable after finishing the game.
-- "HEAD OUT →" option exits to the next level. The shop is always skippable.
 
 ### Scene: one hub, two counters
 
-`ShopScene` — a single screen with two counters, navigated with the buttons Henry already knows: ←/→ switch counters, ↑/↓ select item, attack button buys, jump/HEAD OUT leaves. Full gamepad support via `InputController`.
+`ShopScene` — a single screen with two counters:
 
 - **Blacksmith** (left): anvil, ember particles, warm Light2D glow. Sells sword tiers.
 - **Apocalypse Shop** (right): shack with potion shelves, eerie green light. Sells consumables.
 
+**Input (review finding — ↑ is a jump key, and InputController has no menu primitives):**
+
+- `InputController` gains edge-triggered menu navigation: `upJustPressed` / `downJustPressed` / `leftJustPressed` / `rightJustPressed` (keyboard cursors + WASD + gamepad d-pad/stick, using the existing `prevPad*` edge-detection pattern).
+- ←/→ switch counters, ↑/↓ select item, **attack button (A/J / gamepad X/B) buys**.
+- **Exit only by selecting "HEAD OUT →" and pressing attack** (or Enter). Jump is NOT an exit — ↑ doubles as a jump key and would eject Henry from the shop. (Subjective watch item for Henry's first playtest: gamepad X/B = confirm inverts the usual A = confirm convention; revisit if he fumbles.)
+
 All textures procedural, in `src/art/shop.ts`. Purchases get juice: coin sound, float text, sword-gleam flash.
 
-### Data: `src/shop.ts` (Phaser-free, vitest-covered like `levels.ts`)
+### Data lives in `src/config.ts` (review finding — config.ts owns every gameplay tunable)
+
+No new `src/shop.ts`. Sword tiers and consumable defs are exported constants in `src/config.ts` (`SWORDS`, `CONSUMABLES`), next to the combat tunables they modify. Purchase logic becomes `GameState` methods (`buySword()`, `buyConsumable(kind)`) — `GameState` is Phaser-free and already covered by `GameState.test.ts`.
 
 **Sword tiers** (buy = permanent, next tier only, no skipping):
 
 | Tier | Sword | Cost | Damage | Reach bonus | Swing speed | Blade tint |
 |---|---|---|---|---|---|---|
 | 0 | Rusty Blade | owned | 12 | +0 | 1.0× | — |
-| 1 | Iron Cleaver | 60 | 16 | +4 | 1.0× | steel blue |
+| 1 | Iron Cleaver | 40 | 16 | +4 | 1.0× | steel blue |
 | 2 | Shadow Fang | 150 | 20 | +6 | 1.15× | purple-black |
 | 3 | Flame Edge | 300 | 26 | +8 | 1.15× | orange-red |
 | 4 | Giant Sun Splicer | 600 | 36 | +14 | 1.25× | blazing gold |
 
-(Giant Sun Splicer is canonically required for the final boss — priced as an endgame goal. All numbers are starting points for playtest tuning with Henry.)
+- **Economy (review finding):** a clean Level 1 run currently yields ~40–55 coins (8 zombies × 5 + drops), so Tier 1 drops to 40 to make the first shop visit usable, and **bosses now burst 5 coins (+25) on death** — a fun reward that also funds the ladder. All numbers are starting points for playtest tuning with Henry. Giant Sun Splicer stays expensive: it's canonically required for the final boss.
+- **Swing speed mechanism (review finding):** while attacking, `sprite.anims.timeScale = speed` (sword overlay follows automatically — it syncs via `setFrame`), and `swingCooldownMs` / `finisherCooldownMs` are divided by `speed`. Both, or the stat does nothing.
+- **Damage/reach integration:** `tryAttack` already reads `gs.swordDamage`; reach adds to `COMBAT.hitboxW`. `currentSword`/`swordDamage` become getters derived from `SWORDS[swordIndex]`.
 
 **Consumables** (carried into levels, shown in HUD):
 
 | Item | Cost | Effect | Cap |
 |---|---|---|---|
-| Health Potion | 30 | Auto-drinks when HP drops below 30%: +50 HP, "POTION!" float text | 3 |
-| Shield | 50 | Absorbs the next 3 hits, golden aura while active | 1 |
-| Extra Life | 100 | On death: respawn with full HP instead of Game Over | 2 |
-
-**Edge case — Extra Life during a boss fight:** world bounds are locked to the arena once the encounter starts, so respawning at level start would strand the player. If the boss encounter has begun, respawn at the arena's left edge; the boss keeps its current HP and state. Otherwise respawn at the level spawn point.
+| Health Potion | 30 | Auto-drinks when HP drops below 30% (and as a last resort on a lethal hit): +50 HP, "POTION!" float text | 3 |
+| Shield | 50 | Absorbs the next 3 hits entirely; golden aura while charges remain. Charges persist across levels until spent; buyable only when 0 charges remain | 1 |
+| Extra Life | 100 | On death: in-place revive with full HP instead of Game Over | 2 |
 
 **Why potions auto-drink:** `resetRun()` starts every level at full health, so buy-time healing is useless; potions only make sense as carried mid-level items, and auto-use needs no new button for 8-year-old hands.
 
+### The damage pipeline — pure, ordered, tested (review consensus finding)
+
+Shield, potion, and Extra Life all hook the same few lines in `Player.takeDamage`. That logic moves into a pure function in `src/core/damage.ts`:
+
+```ts
+resolveDamage(state, amount) → { newState, outcome }
+// outcome: 'ignored' | 'absorbed' | 'hurt' | 'potioned' | 'revived' | 'dead'
+```
+
+Ordering, explicitly:
+
+1. **Invulnerable** (post-hit i-frames, dash i-frames, Invincibility buff, post-revive grace) → `ignored`. No shield charge consumed.
+2. **Shield charges > 0** → consume one charge, no HP loss → `absorbed`.
+3. Apply damage to HP.
+4. **HP ≤ 0 and potions > 0** → drink (HP = 50) → `potioned` (the lethal-hit save).
+5. **HP ≤ 0 and lives > 0** → consume life, HP = max → `revived`.
+6. **HP ≤ 0** → `dead`.
+7. Else if **HP < 30% and potions > 0** → drink (+50) → `potioned`.
+
+`Player.takeDamage` applies the result (FX, knockback, revive call). The ordering matrix is vitest-covered in `src/core/damage.test.ts`.
+
+### Extra Life = in-place revive, never a scene restart (review Critical)
+
+A `scene.restart()` would wipe boss HP/state/minions and re-run `create()`. Instead:
+
+- `BaseLevelScene`'s `'player-died'` handler checks the `resolveDamage` outcome — actually the intercept happens **before** `die()` plays: when `resolveDamage` returns `'revived'`, `Player` never enters `dying`.
+- New `Player.revive(x, y)`: resets velocity/animation/alpha, repositions, grants **~2 s invulnerability** (a boss mid-CHARGE or a zombie sitting on the spawn would otherwise chain-kill), camera snaps to the player. Active buffs are cleared.
+- Respawn position: **arena left edge** if the boss encounter has started (world bounds are already locked to x ≥ `arenaLeft`), else the level spawn point. The scene never stops, so boss/minion/gore state is preserved for free.
+- Consumed life is saved immediately.
+
 ### GameState / persistence
 
-- `SaveData` + `GameState` extend with `swordIndex`, `potions`, `shields`, `lives`. Persisted via the existing localStorage save; legacy saves default to `swordIndex: 0` and zero consumables.
-- The existing `currentSword`/`swordDamage` fields become derived from `SWORDS[swordIndex]`.
-- Player combat reads damage/reach/swing-speed from the equipped sword instead of flat `COMBAT.baseSwordDamage`; blade tint applied in-game (WebGL nicety, consistent with variant tints).
+- `SaveData` + `GameState` extend with `swordIndex`, `potions`, `shieldHits` (remaining charges, 0–3), `lives`. Persisted via the existing localStorage save.
+- **Load hardening (review finding):** nullish-coalesce defaults for legacy saves (`swordIndex ?? 0`, etc.) AND clamp every new field — `swordIndex` to `[0, SWORDS.length-1]`, consumables to their caps, reject negative/non-integer/NaN. Tests cover missing, corrupt, and future-version save fields (same pattern as the existing `currentLevel` clamping).
 
 ## Phase 3 — Power Monsters
 
@@ -91,31 +130,47 @@ Four rare elite zombies, one per buff. Names are placeholders — **Henry has fi
 |---|---|---|---|
 | Vulture Zombie | winged silhouette, dark purple | **Flight** | Hold jump to jetpack upward, release to drift down (reduced gravity) |
 | Rage Zombie | glowing red, faster | **Mega Damage** | Sword damage ×2, bigger hit effects/shake |
-| Titan Zombie | huge, stone-grey | **Giant Mode** | Player sprite ×1.5, damage ×1.5 |
+| Titan Zombie | huge, stone-grey | **Giant Mode** | Player visuals ×1.5, damage ×1.5 |
 | Crystal Zombie | shimmering cyan | **Invincibility** | No damage taken, golden flashing aura |
 
-### Mechanics
+### Monster plumbing (review consensus finding — variant table alone isn't enough)
 
-- Each is a `ZOMBIE.variants` entry (tint/scale/stat table) plus a `powerUp` field naming its buff. Tougher than normal zombies (roughly zanter-class HP) so the kill feels earned.
-- **Placement is data-driven:** power monsters are placed explicitly in each level's spawn list in `src/levels.ts` (1–2 per level), so the existing layout invariant tests validate them for free.
-- **Kill → power orb:** the monster drops a glowing power orb (new `Pickup` kind carrying the buff type, distinct color per buff, Light2D glow). Collect to activate.
-- **Buff runtime:** ~10 s per buff, each with its own timer; buffs stack. HUD shows an icon + countdown per active buff, plus a colored aura on the player. Expire on timer, death, or level end.
-- New variant looks (wings, crystal shimmer, rage glow) are baked into textures in `src/art/` where needed — tints alone don't survive the Canvas renderer.
+- `ZombieVariantDef` gains optional `sheet` and `animSet` keys. `Zombie` currently derives both spritesheet AND animation set from `v.base` — power monsters need their own **baked sheets** (Phaser animations bind to texture keys, and tints don't survive Canvas). The Phase 1 `bakeSheet` helper re-bakes the 5 sheets per monster (idle/walk/attack/hurt/dead) with tint + overlay (wings/crystals/glow), and each power monster registers its anim set alongside.
+- Each power monster is a `ZOMBIE.variants` entry with a `powerUp: PowerUpType` field. Roughly zanter-class HP so the kill feels earned. `Zombie` exposes the variant's `powerUp` so the kill handler can drop the right orb.
+- **Placement is data-driven:** placed explicitly in each level's spawn list in `src/levels.ts` (1–2 per level). New invariants in `levels.test.ts`: (a) each buff type appears at least once across built levels; (b) **power-monster spawn x < boss `triggerX` − aggro margin** — `triggerBossEncounter` destroys surviving zombies, which would silently eat the orb; (c) spawn AABB-vs-solid check for scaled elites (the existing tests check bounds, not body overlap).
+
+### Power orb & buff runtime
+
+- **Kill → power orb:** discriminated pickup spec — `{ kind: 'powerOrb', powerUp: PowerUpType }` (extends the current `'coin' | 'heart' | 'key'` union into a tagged shape). Distinct **baked** color/texture per buff (must read on Canvas), Light2D glow.
+- **Buff state lives in `GameState`** (review consensus): a non-persisted `activeBuffs: Map<PowerUpType, expiresAt>` with query helpers (`damageMultiplier()`, `isInvincible()`, `canFly()`, `visualScale()`). Cleared by `resetRun()` — which already runs on every level start — and on death/revive. HUD reads the singleton each frame exactly as it does today; Player queries the helpers. `PowerUpType` + per-buff config (duration, color, multiplier) live in `config.ts` (`POWERUPS`).
+- **Timers:** ~10 s per buff. Different buffs stack (Mega ×2 and Giant ×1.5 multiply to ×3 — intended, it's a kids' power fantasy); **collecting a duplicate buff refreshes its timer** rather than double-tracking (review finding). During the boss cinematic (~2.5 s, player frozen) all `expiresAt` values are extended by the cinematic duration — frozen players don't burn buff time.
+- HUD: a second row below the existing 246×74 panel — consumable icons+counts (potion/shield/life) on the left, active buff icons with countdown bars to their right.
+
+### Buff implementations
+
+- **Flight:** hold jump → vy clamped upward (jetpack), release → reduced-gravity drift. Respects world/camera bounds. **Boss-trigger check (review finding):** the boss encounter triggers on player x-position, not a finite overlap box — verify at implementation that a max-altitude player still trips it; if any progression trigger is a finite zone, stretch it full-height.
+- **Mega Damage:** `damageMultiplier()` folded into the existing attack payload; bigger Juice shake + hit FX.
+- **Giant Mode (review consensus — Arcade bodies DO scale with the sprite):** the zanter's documented 58×116 body proves `setScale` scales the body; a naive ×1.5 makes a 36×72 body that wedges under the test-enforced 56 px clearances. New `Player.setVisualScale(mult)`: `setScale(1.5)` then **re-set body size/offset back to the original 24×48-equivalent**, and scale the sword overlay (it syncs position/frame/flip but not scale).
+- **Invincibility:** `isInvincible()` is step 1 of `resolveDamage` — hits are `ignored`, golden flashing aura.
 
 ### Scope guards
 
 - **Vulture Zombie does not fly.** It looks winged but uses the standard ground-zombie AI — flying-enemy AI is a separate future feature. The flight is the player's reward.
-- **Giant Mode scales the sprite, not the physics body.** A 1.6× body (~77 px) would wedge under the 56 px-clearance platforms the layout tests enforce. Cartoon license: big sprite, same body.
-- Flight respects existing world/camera bounds; nothing special needed for the boss arena (bounds already contain the player).
+- Power orbs and buff auras get baked textures — tints alone don't survive the Canvas renderer.
 
 ## Testing
 
-- `src/shop.test.ts`: tier ordering (cost and damage strictly increasing), buy-next-tier-only logic, consumable caps.
-- `GameState` tests: save/load roundtrip with new fields; legacy-save defaults.
-- `levels.test.ts`: existing invariants automatically cover power-monster spawns; add an invariant that each buff type appears at least once across built levels.
-- Buff timer logic extracted pure (expiry, stacking) for vitest.
-- Browser playtest: full Victory → shop → buy → next-level loop; each buff visually verified headed (WebGL).
+- `GameState.test.ts`: `buySword` (next-tier-only, insufficient coins, max tier), `buyConsumable` (caps, shield-only-when-empty), save/load roundtrip with new fields, legacy/corrupt/future-save defaults + clamps.
+- `src/core/damage.test.ts`: the full `resolveDamage` ordering matrix (invuln/shield/potion-lethal-save/extra-life/death/low-HP-potion).
+- `levels.test.ts`: buff coverage invariant, power-monster-before-boss-trigger invariant, spawn-AABB invariant.
+- Buff timer logic (expiry, duplicate-refresh, cinematic pause) is pure in GameState/`POWERUPS` helpers — vitest-covered.
+- Phase 1: art module export-shape test (also satisfies the tests-written pre-commit gate).
+- Browser playtest: Victory → shop → buy (keyboard AND gamepad nav) → next-level loop; **Extra Life revive inside the boss arena**; auto-potion firing mid-fight; each buff visually verified headed (WebGL).
 
 ## Out of scope
 
 - Flying enemy AI, shopkeeper NPCs/dialogue, Level 4, multiple equippable swords (tiers are linear upgrades for now).
+
+## Review record
+
+Round-1 multi-reviewer design review (Claude subagent + Codex MCP + Gemini CLI) returned 1 Critical (scene-restart revive — replaced with in-place revive), ~10 Majors (all spec gaps: input conflict, death-path intercept, damage ordering, buff ownership, variant sheet/anim plumbing, giant-mode body scaling, swing-speed mechanism, save clamping, config.ts data ownership, flight-vs-trigger), and assorted Minors — all folded into this revision. Subjective items kept as watch-list: gamepad confirm mapping, economy numbers (tune with Henry).
