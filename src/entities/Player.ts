@@ -121,7 +121,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (grounded) {
       this.lastGroundedAt = now;
       this.jumpsLeft = PLAYER.maxJumps;
-      this.lastGroundedPos = { x: this.x, y: this.y };
+      this.lastGroundedPos.x = this.x;
+      this.lastGroundedPos.y = this.y;
     }
 
     // --- Dash ---
@@ -409,6 +410,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // Extra Life consumed: resolveDamage already restored health — reset the body
   // and return to the last safe ground with a grace period.
   revive() {
+    if (this.dying) return;
+    this.attacking = false;
+    this.anims.timeScale = 1;
     this.endSlam();
     if (this.dashing) {
       this.dashing = false;
@@ -433,6 +437,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   private die() {
     this.dying = true;
+    this.attacking = false;
+    this.anims.timeScale = 1;
     this.endSlam();
     this.dashTrailEvent?.remove();
     this.setAccelerationX(0);

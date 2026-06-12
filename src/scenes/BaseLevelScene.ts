@@ -69,6 +69,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.events.off('player-slam');
     this.events.off('player-slam-land');
     this.events.off('player-died');
+    this.events.off('player-revived');
     this.events.off('boss-shockwave');
     this.events.off('boss-summon');
 
@@ -606,7 +607,8 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
     // Boss bounty: a burst of coins around the corpse
     for (let i = 0; i < SHOP.bossCoinBurst; i++) {
-      this.pickups.add(new Pickup(this, bossX + (i - 2) * 18, bossY - 40, 'coin'));
+      const spread = (i - (SHOP.bossCoinBurst - 1) / 2) * 18;
+      this.pickups.add(new Pickup(this, bossX + spread, bossY - 40, 'coin'));
     }
   }
 
