@@ -52,6 +52,38 @@ export const COMBAT = {
   streakWindowMs: 4000,
 };
 
+export interface SwordDef {
+  name: string;
+  cost: number;       // coins; 0 = starting sword
+  damage: number;
+  reachBonus: number; // added to COMBAT.hitboxW
+  swingSpeed: number; // anims.timeScale multiplier; cooldowns divided by this
+  bladeTint?: number; // WebGL nicety on the sword overlay
+}
+
+export const SWORDS: SwordDef[] = [
+  { name: 'Rusty Blade',       cost: 0,   damage: 12, reachBonus: 0,  swingSpeed: 1 },
+  { name: 'Iron Cleaver',      cost: 40,  damage: 16, reachBonus: 4,  swingSpeed: 1,    bladeTint: 0x9ab0c8 },
+  { name: 'Shadow Fang',       cost: 150, damage: 20, reachBonus: 6,  swingSpeed: 1.15, bladeTint: 0x6a4a8a },
+  { name: 'Flame Edge',        cost: 300, damage: 26, reachBonus: 8,  swingSpeed: 1.15, bladeTint: 0xff7733 },
+  { name: 'Giant Sun Splicer', cost: 600, damage: 36, reachBonus: 14, swingSpeed: 1.25, bladeTint: 0xffd24a },
+];
+
+export type ConsumableKind = 'potion' | 'shield' | 'life';
+export const CONSUMABLES: Record<ConsumableKind, { name: string; cost: number; cap: number }> = {
+  potion: { name: 'Health Potion', cost: 30,  cap: 3 },
+  shield: { name: 'Shield',        cost: 50,  cap: 1 }, // grants 3 hit-charges; buy only at 0 charges
+  life:   { name: 'Extra Life',    cost: 100, cap: 2 },
+};
+
+export const SHOP = {
+  potionHealAmount: 50,
+  potionAutoThreshold: 0.3, // drink when health < 30% of max
+  shieldCharges: 3,
+  reviveInvulnMs: 2000,
+  bossCoinBurst: 5, // coins dropped when a boss dies (5 coins × coinValue 5 = +25)
+};
+
 export const ZOMBIE = {
   aggroRange: 240,
   deaggroRange: 330,
