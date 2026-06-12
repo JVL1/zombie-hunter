@@ -7,3 +7,4 @@ assets-raw/
 .playwright-mcp/
 .serena/
 .playtest/
+.claude/worktrees/
