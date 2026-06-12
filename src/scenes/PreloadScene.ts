@@ -4,6 +4,7 @@ import { generateCommonTextures } from '../art/common';
 import { generateForestTextures } from '../art/forest';
 import { bakeTint } from '../art/helpers';
 import { generateRailTextures } from '../art/rail';
+import { generateShopTextures } from '../art/shop';
 import { Assets, PlayerAnims } from '../assets';
 import { GAME_H, GAME_W } from '../config';
 
@@ -75,6 +76,7 @@ export class PreloadScene extends Phaser.Scene {
     generateCityTextures(this);
     generateForestTextures(this);
     generateRailTextures(this);
+    generateShopTextures(this);
     // Pre-tint the pale ruin layers into a night palette (runtime tint on
     // TileSprites is WebGL-only; baking it works on the canvas fallback too)
     bakeTint(this, Assets.RUIN_BG_2, Assets.RUIN_NIGHT_FAR, '#52527e');

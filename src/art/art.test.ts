@@ -4,6 +4,7 @@ import * as common from './common';
 import * as forest from './forest';
 import * as helpers from './helpers';
 import * as rail from './rail';
+import * as shop from './shop';
 
 describe('art module exports', () => {
   it('helpers exports bakeTint and bakeSheet functions', () => {
@@ -29,5 +30,10 @@ describe('art module exports', () => {
   it('rail exports generateRailTextures function', () => {
     expect(Object.keys(rail)).toEqual(['generateRailTextures']);
     expect(typeof rail.generateRailTextures).toBe('function');
+  });
+
+  it('shop exports generateShopTextures function', () => {
+    expect(Object.keys(shop)).toEqual(['generateShopTextures']);
+    expect(typeof shop.generateShopTextures).toBe('function');
   });
 });

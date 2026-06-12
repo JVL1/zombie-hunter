@@ -81,6 +81,14 @@ export const Assets = {
   THRONE_TRAIN: 'gen-throne-train',
   P_SMOKE: 'p-smoke',
   P_SPEEDLINE: 'p-speedline',
+
+  // Shop (between-levels hub) — generated props + HUD consumable icons
+  SHOP_ANVIL: 'gen-shop-anvil',
+  SHOP_SHACK: 'gen-shop-shack',
+  SHOP_COUNTER: 'gen-shop-counter',
+  SHOP_ICON_POTION: 'gen-shop-icon-potion',
+  SHOP_ICON_SHIELD: 'gen-shop-icon-shield',
+  SHOP_ICON_LIFE: 'gen-shop-icon-life',
 } as const;
 
 // Player sheet rows (10 cols): 0 idle(5) 1 walk(8) 2 run(8) 3 jump(4) 4 fall(4) 5 attack(6) 6 death(10)
