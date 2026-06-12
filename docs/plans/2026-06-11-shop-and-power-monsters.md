@@ -80,7 +80,7 @@ describe('art module exports', () => {
     for (let c = 0; c < cols; c++)
       tex.add(idx++, 0, c * frameWidth, r * frameHeight, frameWidth, frameHeight);
   ```
-  (Frame 0 may already exist as `__BASE`; add numbered frames 0..n with `tex.add(idx, ...)` — if `add(0, ...)` collides, start the loop content at the existing-frame check. Acceptance: `scene.textures.get(destKey).frameTotal` ≥ cols×rows after baking, verified in the Task 13 playtest.)
+  (Frame 0 may already exist as `__BASE`; add numbered frames 0..n with `tex.add(idx, ...)` — if `add(0, ...)` collides, start the loop content at the existing-frame check. **Acceptance (review finding — don't defer to the late playtest):** after baking, `scene.textures.get(destKey).frameTotal === cols * rows + 1` (the +1 is `__BASE`) and `getFrameNames()` contains `0..n` — assert this in a dev-console check during this task, not just in Task 13.)
 - Update `PreloadScene.create()` to `import { bakeTint } from '../art/helpers'` and call `bakeTint(this, ...)` for all 9 existing bake calls (PreloadScene.ts:74-86); delete the private method.
 
 **Step 4: Verify** — `npx vitest run` → all pass. `npx tsc --noEmit` → clean.
@@ -239,7 +239,7 @@ export const SHOP = {
 - `buyConsumable('potion'|'shield'|'life')`: deducts cost, increments the field; respects caps (`potions ≤ 3`, `lives ≤ 2`); `shield` buyable only when `shieldHits === 0` and sets `shieldHits = SHOP.shieldCharges`.
 - Save/load roundtrip persists `swordIndex`, `potions`, `shieldHits`, `lives`.
 - Legacy save (raw JSON without the new fields) loads with `swordIndex 0, potions 0, shieldHits 0, lives 0`.
-- Corrupt values clamp: `swordIndex: 99` → 4; `swordIndex: -1` → 0; `potions: 7.5` → reject to 0 (non-integer); `lives: NaN` → 0; `potions: 99` → clamp to cap.
+- Corrupt values clamp: `swordIndex: 99` → 4; `swordIndex: -1` → 0; `potions: 7.5` → reject to 0 (non-integer); `lives: null` → 0 (note: `NaN` isn't valid JSON — `JSON.stringify(NaN)` produces `null`, so test `null`, fractional, negative, and oversized values explicitly); `potions: 99` → clamp to cap.
 
 **Step 2:** Run → FAIL. **Step 3:** Implement:
 
@@ -309,11 +309,12 @@ export function resolveDamage(
 
 1. **`takeDamage` (Player.ts:330-354)** — replace the direct `health -=`/`die()` block: build `DamageState` from GameState, call `resolveDamage(state, amount, this.isInvulnerable)`, write the resulting fields back to GameState (`gs.save()` when a consumable was spent). Outcome handling: `ignored` → return (no knockback/sound); `absorbed` → shield flash (`flashSprite(this, 0xffd700)`), SynthAudio.coin() placeholder→ add `SynthAudio.shield()` if trivial else reuse `hurt()`, NO health flash, keep knockback; `hurt` → existing behavior; `potioned` → existing hurt behavior + `floatText(this.scene, this.x, this.y - 50, 'POTION!', '#ff6688', 14)`; `revived` → call `this.revive()` (below) — **`die()` never runs**; `dead` → existing `die()` path.
 2. **`revive()`** — new public method: `this.gameState.health = this.gameState.maxHealth` already handled by resolveDamage; reset `dying=false` (it was never set — keep the assert that it isn't), `endSlam()`, stop dash if active, `setVelocity(0,0)`, `setAlpha(1)`, reposition to `this.lastGroundedPos`, `this.invulnUntil = this.scene.time.now + SHOP.reviveInvulnMs`, golden `flashSprite`, `this.scene.cameras.main.centerOn(this.x, this.y)` is unnecessary (camera follows) — just emit `this.scene.events.emit('player-revived')` for FX hooks.
-3. **`lastGroundedPos`** — new `{x, y}` field; in `update()` where `grounded` is true (Player.ts:116-119), set `this.lastGroundedPos = { x: this.x, y: this.y }`. Always within current world bounds (incl. arena lock) by construction.
+3. **`lastGroundedPos`** — new `{x, y}` field, **initialized to the spawn position in the constructor**; in `update()` where `grounded` is true (Player.ts:116-119), set `this.lastGroundedPos = { x: this.x, y: this.y }`. **Clamp at revive, not at record (review consensus):** the player can trigger the boss while airborne with their last grounded spot left of `arenaLeft` — in `revive()`, clamp the respawn position to the CURRENT physics bounds: `const b = (this.scene.physics.world as Phaser.Physics.Arcade.World).bounds; x = Phaser.Math.Clamp(this.lastGroundedPos.x, b.x + 30, b.right - 30)`.
 4. **Sword damage** — already reads `gameState.swordDamage` (now a getter) — no change. **Reach**: `tryAttack` reach line (Player.ts:270) becomes `COMBAT.hitboxW + SWORDS[gs.swordIndex].reachBonus + (isFinisher ? COMBAT.finisherReachBonus : 0)`.
 5. **Swing speed**: in `tryAttack` and `startSlam`, after `this.play(ATTACK)`: `this.anims.timeScale = SWORDS[gs.swordIndex].swingSpeed`; in the `animationcomplete-ATTACK` handlers reset `this.anims.timeScale = 1`; cooldown assignment divides by swingSpeed: `(isFinisher ? COMBAT.finisherCooldownMs : COMBAT.swingCooldownMs) / speed`.
 6. **Blade tint**: in constructor after creating `swordOverlay`, `if (WEBGL && SWORDS[gs.swordIndex].bladeTint) this.swordOverlay.setTint(bladeTint)` (WebGL-only nicety, mirrors existing renderer guard at Player.ts:73).
 7. **Boss coin burst** (`BaseLevelScene.onBossDefeated`, BaseLevelScene.ts:561): after the key drop `delayedCall`, add `for (let i = 0; i < SHOP.bossCoinBurst; i++) this.pickups.add(new Pickup(this, bossX + (i - 2) * 18, bossY - 40, 'coin'));`
+8. **No pit-death path exists** (full-width ground + `setCollideWorldBounds(true)`) — but note for future levels: any out-of-bounds kill volume must route through `takeDamage`, never call `die()` directly, or Extra Lives won't fire (review finding).
 
 **TDD note:** the logic core was tested in Task 7; this task is Phaser-bound wiring. Re-run `npx vitest run` (regression) + `npx tsc --noEmit`. Manual spot-check: `npm run dev`, take hits, die with 0 consumables → GameOver unchanged.
 
@@ -331,7 +332,7 @@ export function resolveDamage(
 - Modify: `src/core/InputController.ts`
 
 **Spec:** Add edge-triggered `upJustPressed`, `downJustPressed`, `leftJustPressed`, `rightJustPressed` booleans, computed in `update()`:
-- Keyboard: `Phaser.Input.Keyboard.JustDown(this.cursors.up/down/left/right)` — **arrow keys ONLY, no WASD** (A is the attack key — design-review finding).
+- Keyboard: **`Phaser.Input.Keyboard.JustDown` is one-shot — calling it twice in one update returns false the second time, and `update()` already consumes `JustDown(cursors.up)` for `jumpJustPressed` (InputController.ts:61). Capture each key's JustDown ONCE into a local at the top of `update()` and derive both `jumpJustPressed` and `upJustPressed` from the same captured value** (plan-review finding — without this, ↑ navigation is dead in the shop). Arrow keys ONLY, no WASD (A is the attack key — design-review finding).
 - Gamepad: d-pad or stick crossing the 0.5 threshold, edge-detected with new `prevPadUp/Down/Left/Right` fields (same pattern as `prevPadJump`, InputController.ts:13-15, 74-76). Stick: `leftStick.y < -0.5` = up, etc.
 - `attackJustPressed` and Enter (`this.scene.input.keyboard.addKey('ENTER')` → expose `confirmJustPressed = attackJustPressed || JustDown(keyEnter)`) serve as the shop's buy/confirm.
 
@@ -359,7 +360,7 @@ No new unit test (Phaser-bound; vitest covers Phaser-free only) — acceptance i
    - Apocalypse: 3 `CONSUMABLES` rows with owned count vs cap and cost. Buy = `gs.buyConsumable(kind)`.
    - Bottom: `HEAD OUT →` item.
 3. **Input loop** (scene `update()`): `controls.update()`; ←/→ switches counter focus, ↑/↓ moves selection (include HEAD OUT as the last item of either list), confirm (`attackJustPressed`/Enter) buys or — on HEAD OUT — `this.scene.start(GameState.getInstance().currentLevelDef.sceneKey)`. **Jump must NOT exit** (↑ is a jump key). Failed buy (insufficient coins / at cap) → red flash + `SynthAudio.hurt()`; success → `SynthAudio.coin()`, float text, gleam flash.
-4. **`src/art/shop.ts`**: `generateShopTextures(scene)` — anvil (~64×40), shack (~120×100), counter slab — same blocky pixel language as existing packs (model on `generateCityTextures` shapes).
+4. **`src/art/shop.ts`**: `generateShopTextures(scene)` — anvil (~64×40), shack (~120×100), counter slab, **and the three 12×12 HUD consumable icons `SHOP_ICON_POTION` / `SHOP_ICON_SHIELD` / `SHOP_ICON_LIFE`** (this task owns them; Task 11 consumes them — review finding on ownership). Same blocky pixel language as existing packs (model on `generateCityTextures` shapes).
 
 **Acceptance playtest (agent-browser):** beat Level 1 (or `window.game` shortcut: `scene.start('Shop')` after setting `gs.currentLevel=2`) → shop renders; arrows navigate without jumping/exiting; buying Iron Cleaver with ≥40 coins works and persists after reload (localStorage); HEAD OUT starts Level 2; replay flow (MainMenu → 1) still routes through shop; after final level victory → MainMenu (no shop). Keyboard AND gamepad nav if a pad is available.
 
@@ -369,12 +370,12 @@ Run `npx vitest run` + `npx tsc --noEmit`. Commit: `git commit -m "feat: ShopSce
 
 **Executor:** codex *(bounded scene extension with a fixed layout spec)*
 
-**Depends On:** Task 6
+**Depends On:** Task 6, Task 10 *(consumes the `SHOP_ICON_*` textures Task 10 generates)*
 
 **Files:**
 - Modify: `src/scenes/HUDScene.ts`
 
-**Spec:** Second translucent strip below the existing panel (panel is `14,14,246×74` — new row at `14, 92, 246×24, 0x000000, 0.45`). Three icon+count pairs: potion (HEART texture tinted… **no — Canvas tint no-op**; reuse HEART for potion count is acceptable with a `xN` label, or add tiny generated icons in `src/art/common.ts` — prefer generated `SHOP_ICON_POTION/SHIELD/LIFE` 12×12 textures added in Task 10's `shop.ts`), shield charges (`shieldHits`), lives. Update counts in `update()` from GameState (same change-detection pattern as `lastCoins`, HUDScene.ts:92-98). Hide the row entirely when all three are 0 (pre-shop players see no clutter).
+**Spec:** Second translucent strip below the existing panel (panel is `14,14,246×74` — new row at `14, 92, 246×24, 0x000000, 0.45`). Three icon+count pairs using the `SHOP_ICON_POTION/SHIELD/LIFE` textures from Task 10 (generated, not tinted — Canvas tint no-op): potion count, shield charges (`shieldHits`), lives. Update counts in `update()` from GameState (same change-detection pattern as `lastCoins`, HUDScene.ts:92-98). Visibility **latches per scene instance** (review finding): hidden while all three are 0 AND never shown this scene; once any count goes positive, the row stays visible (with zeros) for the rest of the scene — no jarring HUD pop when the last potion is drunk mid-fight.
 
 Run `npx vitest run` + `npx tsc --noEmit`; visual check in dev server. Commit: `git commit -m "feat: HUD consumable row"`
 
@@ -433,17 +434,18 @@ GameState: `activeBuffs = new Map<PowerUpType, number>()` (expiresAt; **not** in
 
 **Spec:**
 
-1. `ZombieVariantDef` gains `powerUp?: PowerUpType; sheet?: string; animSet?: string;` — `sheet` is a **key prefix**: the baked sheets register as `${sheet}-idle/walk/attack/hurt/dead`.
-2. New variants (Henry renames later) — all `base: 'zombie'` 96×96 family except titan (`urban` 128×128 for bulk):
+1. `ZombieVariantDef` gains `powerUp?: PowerUpType; sheet?: string; animSet?: ZombieAnimSetKey;` — `sheet` is a **key prefix**: the baked sheets register as `${sheet}-idle/walk/attack/hurt/dead`. **Type safety (review finding):** define `export type ZombieAnimSetKey = 'zombie' | 'urban' | 'pm-vulture' | 'pm-rage' | 'pm-titan' | 'pm-crystal'` in `assets.ts` and type `ZombieAnims: Record<ZombieAnimSetKey, ZombieAnimSet>` — do NOT widen to `Record<string, ...>`.
+2. New variants (Henry renames later) — all `base: 'zombie'` 96×96 family except titan (`urban` 128×128 for bulk). **`sheet` and `animSet` are PAIRED — a power variant without `animSet` silently snaps back to the base sheet on the first `play()` call (review finding: `Zombie.update` plays `this.anims_` keys, and anims are bound to texture keys):**
    ```ts
-   vulture: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 60, chaseSpeed: 110, contactDamage: 10, powerUp: 'flight',     sheet: 'pm-vulture' },
-   rage:    { base: 'zombie', hp: 80,  scale: 1.05, patrolSpeed: 70, chaseSpeed: 125, contactDamage: 12, powerUp: 'megaDamage', sheet: 'pm-rage' },
-   titan:   { base: 'urban',  hp: 110, scale: 1.5,  patrolSpeed: 38, chaseSpeed: 65,  contactDamage: 14, powerUp: 'giant',      sheet: 'pm-titan' },
-   crystal: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 55, chaseSpeed: 100, contactDamage: 10, powerUp: 'invincible', sheet: 'pm-crystal' },
+   vulture: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 60, chaseSpeed: 110, contactDamage: 10, powerUp: 'flight',     sheet: 'pm-vulture', animSet: 'pm-vulture' },
+   rage:    { base: 'zombie', hp: 80,  scale: 1.05, patrolSpeed: 70, chaseSpeed: 125, contactDamage: 12, powerUp: 'megaDamage', sheet: 'pm-rage',    animSet: 'pm-rage' },
+   titan:   { base: 'urban',  hp: 110, scale: 1.5,  patrolSpeed: 38, chaseSpeed: 65,  contactDamage: 14, powerUp: 'giant',      sheet: 'pm-titan',   animSet: 'pm-titan' },
+   crystal: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 55, chaseSpeed: 100, contactDamage: 10, powerUp: 'invincible', sheet: 'pm-crystal', animSet: 'pm-crystal' },
    ```
+   Config test (extend Step 1 failing tests): every variant with a `powerUp` has BOTH `sheet` and `animSet`, `ZombieAnims[animSet]` exists, and `hp >= 80` (note: don't compare to zanter's hp — it's 95; the elite bar is the explicit constant 80).
 3. `generatePowerMonsterSheets`: for each variant × each of the 5 animation sheets, call `bakeSheet` with a draw callback: multiply-tint to the variant color (vulture dark purple `#5a3a8a`, rage red `#aa2222`, titan stone `#8a8a7a`, crystal cyan `#3ad8cc`) + a simple painted overlay per frame column (vulture: dark wing triangles behind the torso; crystal: 3-4 light cyan shard rects; rage: glow rim via lighten composite; titan: none — scale sells it). Overlays are coarse — these are 96px zombies seen at game speed; **bake, don't tint, so Canvas renders them** (CLAUDE.md gotcha).
-4. PreloadScene `create()` registers the anims (same frame counts/rates as the base family — clone the `mk(...)` calls at PreloadScene.ts:127-137 with the new sheet keys and `pm-{v}-{anim}` keys); add the 4 sets to `ZombieAnims` under their `animSet` names.
-5. `Zombie` constructor (Zombie.ts:39-44): texture = `v.sheet ? `${v.sheet}-idle` : (v.base === 'urban' ? 'urban-idle-sheet' : 'zombie-idle-sheet')`; `this.anims_ = v.animSet ? ZombieAnims[v.animSet] : ZombieAnims[v.base]` (widen `ZombieAnims` record type). Add `get powerUp(): PowerUpType | undefined { return this.vdef.powerUp; }`. Body size still keyed off `v.base` (unchanged).
+4. **Ordering matters (review finding):** `createAnimations()` currently runs FIRST in `create()` (PreloadScene.ts:68) — `generateFrameNumbers` on a not-yet-baked sheet key fails. The PM anim registration must run AFTER `generatePowerMonsterSheets(this)`. Split it: keep `createAnimations()` first (base anims on loaded sheets), then `generatePowerMonsterSheets(this)`, then a new `registerPowerMonsterAnims(scene)` (exported from `src/art/powerMonsters.ts`, cloning the `mk(...)` pattern at PreloadScene.ts:127-137 with `pm-{v}-{anim}` keys and the same frame counts/rates as the variant's base family). Add the 4 sets to `ZombieAnims` under their `animSet` names.
+5. `Zombie` constructor (Zombie.ts:39-44): texture = `v.sheet ? `${v.sheet}-idle` : (v.base === 'urban' ? 'urban-idle-sheet' : 'zombie-idle-sheet')`; `this.anims_ = ZombieAnims[v.animSet ?? v.base]` (typed by `ZombieAnimSetKey` — no record widening). Add `get powerUp(): PowerUpType | undefined { return this.vdef.powerUp; }`. Body size still keyed off `v.base` (unchanged).
 
 **Acceptance:** `npx vitest run` (config invariants) + `npx tsc --noEmit`; dev-server spot check spawning one power monster (temporarily via console `new Zombie(...)` or wait for Task 16). **Headed** playtest in Task 18 verifies the looks. Commit: `git commit -m "feat: power-monster variants with baked sheets and anim sets"`
 
@@ -451,7 +453,7 @@ GameState: `activeBuffs = new Map<PowerUpType, number>()` (expiresAt; **not** in
 
 **Executor:** codex *(bounded entity extension; acceptance = orb drops and grants buff)*
 
-**Depends On:** Task 12, Task 13
+**Depends On:** Task 2 *(modifies `src/art/common.ts`)*, Task 12, Task 13
 
 **Files:**
 - Modify: `src/entities/Pickups.ts`
@@ -481,10 +483,11 @@ GameState: `activeBuffs = new Map<PowerUpType, number>()` (expiresAt; **not** in
 
 1. **Flight** (`update()`, after the jump block, gated `if (gs.canFly(now) && !this.dashing)`): while `controls.jumpHeld` and airborne → `this.setVelocityY(Math.max(body.velocity.y + BUFF.flightRiseVelocity * (delta/1000) * 4, BUFF.flightRiseVelocity))` — i.e., thrust toward a capped rise velocity (jetpack feel, no instant snap); while airborne and falling with flight active → gravity-reduced drift: `body.setGravityY(-1000 * (1 - BUFF.flightDriftGravityFactor))` (offsetting world gravity to 35%), restored to 0 when buff ends/grounded. Double-jump rules untouched; world bounds already contain the player. NOTE: `Player.update()` has no `delta` param today — use `this.scene.game.loop.delta`.
 2. **Mega damage / giant damage**: in `tryAttack` and `startSlam`, damage line multiplies by `gs.damageMultiplier(now)` (floor after multiplying). When multiplier > 1, bump Juice: the scene's hit handlers already shake — Player adds bigger swing FX only if trivial; skip otherwise (scene shake is enough).
-3. **Giant mode**: track `appliedVisualScale`; each `update()`, `const want = gs.visualScale(now)` — when it changes: `this.setScale(want); body.setSize(24 / want, 48 / want); body.setOffset(28 / want + (28 * (want-1)) / (2*want), ...)` — **concretely:** after `setScale(s)`, restore the body's WORLD size by setting `body.setSize(24 / s, 48 / s)` and recompute offset so feet stay planted: offset Y = `(64 - 48 / s) - small` … (Implementer: verify empirically with the P physics-debug overlay — acceptance is: world-space body stays ~24×48 with bottom edge at the sprite's feet at scale 1.35 and at scale 1. Both states checked with debug draw.) Scale `swordOverlay.setScale(want)` in the sync block (Player.ts:177-180).
+3. **Giant mode**: track `appliedVisualScale`; each `update()`, `const want = gs.visualScale(now)` — when it changes: `this.setScale(s)` then restore the body's WORLD size: `body.setSize(24 / s, 48 / s)`. **Intended offset formula (stated fully — review finding):** the unscaled body is `setSize(24, 48)` + `setOffset(28, 16)` on an 80×64 frame; feet sit at frame-local y = 16 + 48 = 64. To keep feet planted at scale `s`, the frame-local body bottom must stay 64: `offsetY = 64 - 48 / s`, and to keep it centered horizontally: `offsetX = 28 + (24 - 24 / s) / 2`. (Arcade offsets are frame-local and scale with the sprite, which is what makes this work.) **Empirical acceptance trumps the formula (review note: 1-2px jitter from texture padding is common):** verify with the P physics-debug overlay — world-space body ~24×48 with bottom edge at the sprite's feet at BOTH scale 1.35 and scale 1, tune the constants if the overlay disagrees. Scale `swordOverlay.setScale(want)` in the sync block (Player.ts:177-180).
 4. **Invincibility**: `get isInvulnerable()` (Player.ts:86-88) ORs in `this.gameState.isInvincible(this.scene.time.now)`. Golden flashing: alpha-pulse tween while active (start/stop on transition), plus aura: reuse `Assets.GLOW` image stuck to the player, tint per active buff color on WebGL, visible-but-untinted on Canvas (acceptable — orb + HUD carry the info on Canvas).
-5. **Aura**: one GLOW sprite behind the player whenever ANY buff is active (color = most recent buff on WebGL), destroyed when none.
-6. **Cinematic pause** (`BaseLevelScene.triggerBossEncounter`): record `cinematicStartedAt = this.time.now` when setting `this.cinematic = true`; where `this.cinematic = false` is restored (BaseLevelScene.ts:525), call `this.gameState.extendBuffs(this.time.now - cinematicStartedAt)`.
+5. **Aura**: one GLOW sprite behind the player whenever ANY buff is active (color = most recent buff on WebGL), destroyed when none. **Also show a gold aura while `shieldHits > 0`** (the design's "golden aura while charges remain" — review finding: previously unowned).
+6. **Cinematic pause — extend continuously, not retroactively (review finding):** a lump-sum `extendBuffs` at cinematic end lets a buff expire mid-cutscene (giant shrinks, aura pops) and then reactivate. Instead, in `BaseLevelScene.update()`: `if (this.cinematic) this.gameState.extendBuffs(delta);` — expiries slide forward every frozen frame, so effects never flicker.
+7. **Buffs clear on revive (review finding — design commitment with no owner):** in `Player.revive()` (Task 8 created it; this task owns buff state), call `this.gameState.clearBuffs()` so a revived player starts clean.
 
 **Acceptance:** regression vitest + tsc; dev-server with physics debug (P key): giant body stays 24×48 world-space; flight holds jump to rise, releases to drift; invincibility ignores zombie contact. Commit: `git commit -m "feat: buff effects — flight, mega damage, giant mode, invincibility"`
 
@@ -509,7 +512,7 @@ it('power-monster ground spawns do not overlap stair stones or platform bands', 
 // AABB of the variant body (base-keyed size × scale) at zombieSpawnY vs each platform/stair tile rect
 ```
 
-**Step 2:** FAIL (no spawns yet). **Step 3:** Add spawns — suggested placement (tune to pass the AABB invariant): Level 1: `vulture` near x≈1700, `rage` near x≈2300; Level 2: `titan` near x≈1500 (ground, clear of stairs), `crystal` near x≈2600; Level 3: `vulture` or `rage` on a clear ground stretch (NOT on train roofs — explicit `y` spawns need the platform-clearance check; keep ground-level for v1). All x < triggerX − 240.
+**Step 2:** FAIL (no spawns yet). **Step 3:** Add spawns — suggested placement (the AABB invariant is the arbiter, not these numbers): Level 1: `vulture` near x≈1700, `rage` near x≈2300; Level 2: `titan` near **x≈1950** (review finding: x≈1500 sits exactly on a stair stone — Level 2 has stones at 1450/1500/1550; pick a stretch the invariant proves clear), `crystal` near x≈2600; Level 3: `vulture` or `rage` on a clear ground stretch (NOT on train roofs — explicit `y` spawns need the platform-clearance check; keep ground-level for v1). All x < triggerX − 240.
 
 **Step 4:** PASS + tsc. **Step 5:** `git commit -m "feat: power-monster spawns with placement invariants"`
 
@@ -517,7 +520,7 @@ it('power-monster ground spawns do not overlap stair stones or platform bands', 
 
 **Executor:** codex *(bounded HUD extension, fixed layout)*
 
-**Depends On:** Task 12
+**Depends On:** Task 11 *(lays out right of the consumable row)*, Task 12
 
 **Files:**
 - Modify: `src/scenes/HUDScene.ts`
@@ -565,7 +568,9 @@ Run the Manual Test Checklist below via agent-browser (headless for flow, **`--h
 - [ ] Die with an Extra Life mid-level → in-place revive at last grounded spot, ~2s invuln blink, GameOver does NOT fire, life count decrements (persisted)
 - [ ] Die with Extra Life DURING the boss fight → revive inside the arena, boss HP unchanged, fight continues
 - [ ] Uncollected orb on the ground when boss triggers → orb flies to the player (never stranded)
-- [ ] Buff active when boss cinematic plays → countdown effectively pauses (≈2.5s longer)
+- [ ] Buff active when boss cinematic plays → countdown effectively pauses (≈2.5s longer), and giant/aura effects do NOT flicker off mid-cutscene
+- [ ] Trigger the boss while airborne mid-flight buff → encounter still fires (trigger is x-only)
+- [ ] Extra Life revive after triggering the boss from the air → respawn clamped inside the arena
 - [ ] Replay Level 1 from MainMenu after finishing the game → Victory still routes through shop
 - [ ] GameOver retry → buffs cleared, consumables retained
 
@@ -585,11 +590,11 @@ No Playwright task: this is a canvas-rendered Phaser game with no DOM to assert 
 9. Task 9: InputController menu nav *(depends on 0)*
 10. Task 8: Player integration (damage/revive/sword stats) *(depends on 6, 7)*
 11. Task 10: ShopScene + Victory routing *(depends on 4, 6, 9)*
-12. Task 11: HUD consumable row *(depends on 6)*
+12. Task 11: HUD consumable row *(depends on 6, 10 — consumes SHOP_ICON textures)*
 13. Task 12: POWERUPS + buff runtime *(depends on 6)*
 14. Task 13: Power-monster variants + baked sheets *(depends on 1, 12)*
-15. Task 14: Power orbs *(depends on 12, 13)*
+15. Task 14: Power orbs *(depends on 2 — touches art/common.ts; 12, 13)*
 16. Task 15: Buff effects in Player *(depends on 8, 12)*
 17. Task 16: Spawns + invariants *(depends on 13)*
-18. Task 17: HUD buff countdowns *(depends on 12)*
+18. Task 17: HUD buff countdowns *(depends on 11, 12)*
 19. Task 18: Integration playtest + docs *(depends on all)*
