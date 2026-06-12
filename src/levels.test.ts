@@ -2,12 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { LEVELS, TRAIN, levelByNumber } from './levels';
 import { POWERUPS, WORLD, ZOMBIE } from './config';
 
-function zombieSpawnY(variant: keyof typeof ZOMBIE.variants): number {
-  const v = ZOMBIE.variants[variant];
-  const bodyBottomOffset = (v.base === 'urban' ? 64 : 48) * v.scale;
-  return WORLD.groundY - 8 - bodyBottomOffset;
-}
-
 interface Rect {
   left: number;
   right: number;
@@ -15,18 +9,19 @@ interface Rect {
   bottom: number;
 }
 
-function bodyRect(spawn: { x: number; variant: keyof typeof ZOMBIE.variants; y?: number }): Rect {
+// Body rect at REST (feet on the ground) — the wedge hazard is a persistent
+// overlap where the zombie lives, not the transient 8px-elevated spawn drop
+// (BaseLevelScene.zombieSpawnY), which gravity + separation resolve benignly.
+// Base sizes must match Zombie.ts setSize/setOffset (urban 40x80, others 32x64).
+function restingBodyRect(spawn: { x: number; variant: keyof typeof ZOMBIE.variants }): Rect {
   const v = ZOMBIE.variants[spawn.variant];
   const width = (v.base === 'urban' ? 40 : 32) * v.scale;
   const height = (v.base === 'urban' ? 80 : 64) * v.scale;
-  const bottomOffset = (v.base === 'urban' ? 64 : 48) * v.scale;
-  const y = spawn.y ?? zombieSpawnY(spawn.variant);
-  const bottom = y + bottomOffset;
   return {
     left: spawn.x - width / 2,
     right: spawn.x + width / 2,
-    top: bottom - height,
-    bottom,
+    top: WORLD.groundY - height,
+    bottom: WORLD.groundY,
   };
 }
 
@@ -123,11 +118,17 @@ describe('level registry integrity', () => {
         })
       );
 
+      // Scoped to power monsters (this epic's new spawns): several legacy
+      // spawns graze solids by 1-4px at rest, which Arcade separation has
+      // always resolved benignly — widening would flag tuned, working data.
       for (const spawn of def.zombieSpawns) {
         if (!ZOMBIE.variants[spawn.variant].powerUp || spawn.y !== undefined) continue;
-        const rect = bodyRect(spawn);
+        const rect = restingBodyRect(spawn);
         for (const solid of [...platformRects, ...stairRects]) {
-          expect(overlaps(rect, solid)).toBe(false);
+          expect(
+            overlaps(rect, solid),
+            `L${def.levelNumber} ${spawn.variant}@${spawn.x} body overlaps solid at ${solid.left}-${solid.right}, ${solid.top}-${solid.bottom}`
+          ).toBe(false);
         }
       }
     }

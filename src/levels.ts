@@ -93,7 +93,9 @@ const levelOne: LevelDef = {
     [2100, 408, 4, 40, 55],
   ],
   zombieSpawns: [
-    ...[500, 700, 950, 1250, 1550, 1850, 2150, 2450].map((x, i) => ({
+    // 880 (not 950): the urban body would spawn enclosing the first stone of
+    // the stair at x=950 — same wedge mode as Level 3's relocated Zanter
+    ...[500, 700, 880, 1250, 1550, 1850, 2150, 2450].map((x, i) => ({
       x,
       variant: (i % 3 === 2 ? 'urban' : 'zombie') as ZombieVariant,
     })),

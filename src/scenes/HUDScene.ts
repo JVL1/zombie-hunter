@@ -25,7 +25,6 @@ export class HUDScene extends Phaser.Scene {
   private lastConsumableCounts = [-1, -1, -1];
   private consumablesShown = false;
   private buffSlots: BuffHudSlot[] = [];
-  private buffSlotKey = '';
   private comboText!: Phaser.GameObjects.Text;
   private comboBar!: Phaser.GameObjects.Rectangle;
 
@@ -42,7 +41,6 @@ export class HUDScene extends Phaser.Scene {
     this.lastConsumableCounts = [-1, -1, -1];
     this.consumablesShown = false;
     this.buffSlots = [];
-    this.buffSlotKey = '';
 
     // Panel
     this.add.rectangle(14, 14, 246, 74, 0x000000, 0.45).setOrigin(0);
@@ -161,16 +159,16 @@ export class HUDScene extends Phaser.Scene {
 
     const now = this.time.now;
     const activeBuffs = this.gameState.activeBuffList(now);
-    const nextBuffSlotKey = activeBuffs.map(({ type }) => type).join('|');
-    if (nextBuffSlotKey !== this.buffSlotKey) {
-      this.rebuildBuffSlots(activeBuffs);
-      this.buffSlotKey = nextBuffSlotKey;
+    // Rebuild only on real transitions; after a rebuild, buffSlots mirrors
+    // activeBuffs index-for-index, so the drain pass is a plain zip
+    let buffsChanged = activeBuffs.length !== this.buffSlots.length;
+    for (let i = 0; !buffsChanged && i < activeBuffs.length; i++) {
+      if (activeBuffs[i].type !== this.buffSlots[i].type) buffsChanged = true;
     }
-    this.buffSlots.forEach((slot) => {
-      const buff = activeBuffs.find(({ type }) => type === slot.type);
-      if (!buff) return;
+    if (buffsChanged) this.rebuildBuffSlots(activeBuffs);
+    this.buffSlots.forEach((slot, i) => {
       const remaining = Phaser.Math.Clamp(
-        (buff.expiresAt - now) / POWERUPS[buff.type].durationMs,
+        (activeBuffs[i].expiresAt - now) / POWERUPS[slot.type].durationMs,
         0,
         1
       );
