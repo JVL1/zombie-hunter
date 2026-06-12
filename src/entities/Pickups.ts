@@ -1,21 +1,45 @@
 import Phaser from 'phaser';
 import { Assets } from '../assets';
+import { POWERUPS, PowerUpType } from '../config';
 import { GameState } from '../core/GameState';
 import { SynthAudio } from '../core/SynthAudio';
 import { floatText, lit } from '../fx/Effects';
 
-export type PickupKind = 'coin' | 'heart' | 'key';
+export type PickupKind = 'coin' | 'heart' | 'key' | 'orb';
 
-// Coins/hearts/keys dropped into the world. Coins magnet to the player when close.
+const ORB_TEXTURES: Record<PowerUpType, string> = {
+  flight: Assets.ORB_FLIGHT,
+  megaDamage: Assets.ORB_MEGA_DAMAGE,
+  giant: Assets.ORB_GIANT,
+  invincible: Assets.ORB_INVINCIBLE,
+};
+
+// Coins/hearts/keys/orbs dropped into the world. Coins magnet to the player when close.
 export class Pickup extends Phaser.Physics.Arcade.Sprite {
   kind: PickupKind;
+  powerUp?: PowerUpType;
   private magnetRange: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, kind: PickupKind) {
+  constructor(scene: Phaser.Scene, x: number, y: number, kind: Exclude<PickupKind, 'orb'>);
+  constructor(scene: Phaser.Scene, x: number, y: number, kind: 'orb', powerUp: PowerUpType);
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    kind: PickupKind,
+    powerUp?: PowerUpType
+  ) {
     const tex =
-      kind === 'coin' ? Assets.COIN : kind === 'heart' ? Assets.HEART : Assets.KEY;
+      kind === 'coin'
+        ? Assets.COIN
+        : kind === 'heart'
+          ? Assets.HEART
+          : kind === 'key'
+            ? Assets.KEY
+            : ORB_TEXTURES[powerUp!];
     super(scene, x, y, tex);
     this.kind = kind;
+    this.powerUp = powerUp;
     this.magnetRange = kind === 'coin' ? 80 : 0;
 
     scene.add.existing(this);
@@ -37,7 +61,7 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
         ease: 'Sine.easeInOut',
       });
     } else {
-      // Glow pulse for hearts and keys
+      // Glow pulse for hearts, keys, and power orbs
       scene.tweens.add({
         targets: this,
         scale: 1.15,
@@ -47,13 +71,18 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
         ease: 'Sine.easeInOut',
       });
     }
-    if (kind === 'key' && scene.sys.renderer.type === Phaser.WEBGL) {
-      const light = scene.lights.addLight(x, y, 140, 0xffdd66, 1.2);
+    if ((kind === 'key' || kind === 'orb') && scene.sys.renderer.type === Phaser.WEBGL) {
+      const color = kind === 'orb' && powerUp ? POWERUPS[powerUp].color : 0xffdd66;
+      const light = scene.lights.addLight(x, y, 140, color, 1.2);
       this.on('destroy', () => scene.lights.removeLight(light));
       scene.events.on('update', () => {
         if (this.active) light.setPosition(this.x, this.y);
       });
     }
+  }
+
+  magnetize() {
+    this.magnetRange = Number.POSITIVE_INFINITY;
   }
 
   updateMagnet(player: Phaser.Physics.Arcade.Sprite) {
@@ -84,6 +113,20 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
         break;
       case 'key':
         SynthAudio.key();
+        break;
+      case 'orb':
+        if (this.powerUp) {
+          gs.grantBuff(this.powerUp, this.scene.time.now);
+          SynthAudio.key();
+          floatText(
+            this.scene,
+            this.x,
+            this.y - 10,
+            `${POWERUPS[this.powerUp].name}!`,
+            `#${POWERUPS[this.powerUp].color.toString(16).padStart(6, '0')}`,
+            14
+          );
+        }
         break;
     }
     this.destroy();

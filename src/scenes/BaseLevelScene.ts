@@ -443,6 +443,9 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     }
 
     this.pickups.add(new Pickup(this, z.x, z.y - 20, 'coin'));
+    if (z.powerUp) {
+      this.pickups.add(new Pickup(this, z.x, z.y - 30, 'orb', z.powerUp));
+    }
     if (Math.random() < ZOMBIE.heartDropChance) {
       this.pickups.add(new Pickup(this, z.x + 14, z.y - 24, 'heart'));
     }
@@ -503,6 +506,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.time.delayedCall(1300, () => {
       if (!this.boss) return;
       this.boss.triggerRise();
+
+      this.pickups.getChildren().forEach((pickupObj) => {
+        const pickup = pickupObj as Pickup;
+        if (pickup.active && pickup.kind === 'orb') pickup.magnetize();
+      });
 
       // Clear stragglers before shrinking the world
       this.zombies.getChildren().slice().forEach((z) => (z as Zombie).destroy());

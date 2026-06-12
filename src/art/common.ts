@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import { Assets } from '../assets';
-import { GAME_H, GAME_W } from '../config';
+import { GAME_H, GAME_W, POWERUPS } from '../config';
 
 export function generateCommonTextures(scene: Phaser.Scene): void {
   const g = scene.make.graphics({ x: 0, y: 0 }, false);
@@ -71,6 +71,29 @@ export function generateCommonTextures(scene: Phaser.Scene): void {
   g.fillRect(12, 27, 5, 3);
   g.generateTexture(Assets.KEY, 20, 32);
   g.clear();
+
+  // --- Power orbs (baked per-buff colors; Canvas ignores runtime tint) ---
+  const orbKeys = {
+    flight: Assets.ORB_FLIGHT,
+    megaDamage: Assets.ORB_MEGA_DAMAGE,
+    giant: Assets.ORB_GIANT,
+    invincible: Assets.ORB_INVINCIBLE,
+  } as const;
+  for (const [type, def] of Object.entries(POWERUPS)) {
+    const key = orbKeys[type as keyof typeof orbKeys];
+    for (let r = 8; r >= 5; r--) {
+      g.fillStyle(def.color, 0.12);
+      g.fillCircle(8, 8, r);
+    }
+    g.fillStyle(def.color, 1);
+    g.fillCircle(8, 8, 6);
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(8, 8, 3.2);
+    g.fillStyle(0xffffff, 0.9);
+    g.fillCircle(5.8, 5.8, 1.3);
+    g.generateTexture(key, 16, 16);
+    g.clear();
+  }
 
   // --- Shockwave ring ---
   g.lineStyle(5, 0xffffff, 1);
