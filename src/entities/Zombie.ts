@@ -3,6 +3,7 @@ import { ZombieAnims, ZombieAnimSet } from '../assets';
 import { PowerUpType, ZOMBIE, ZombieVariant, ZombieVariantDef } from '../config';
 import { SynthAudio } from '../core/SynthAudio';
 import { dustPuff, flashSprite, floatText, knockback, lit } from '../fx/Effects';
+import { Hittable } from './Hittable';
 
 export type { ZombieVariant } from '../config';
 
@@ -17,7 +18,7 @@ enum ZombieState {
 // Patrols until the player gets close, then chases. In melee range it
 // telegraphs a lunge (flash + crouch) before leaping. If the player is on a
 // platform above, it hops pathetically and fails — Henry's favorite feature.
-export class Zombie extends Phaser.Physics.Arcade.Sprite {
+export class Zombie extends Phaser.Physics.Arcade.Sprite implements Hittable {
   health: number;
   maxHealth: number;
   private anims_: ZombieAnimSet;
@@ -79,6 +80,19 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
 
   getDamage(): number {
     return this.vdef.contactDamage;
+  }
+
+  // Hittable: contact-hit damage (alias of getDamage), and a sword-hit apply
+  // that reports whether this hit was the killing blow. takeDamage stays the
+  // canonical mutator — takeHit just wraps it so the scene's shared combat path
+  // reads one boolean instead of re-checking isDead().
+  get contactDamage(): number {
+    return this.vdef.contactDamage;
+  }
+
+  takeHit(amount: number): boolean {
+    this.takeDamage(amount);
+    return this.isDead();
   }
 
   get isLunging(): boolean {

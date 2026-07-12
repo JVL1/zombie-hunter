@@ -7,9 +7,16 @@ import { Juice } from '../core/Juice';
 import { SynthAudio } from '../core/SynthAudio';
 import { Boss } from '../entities/Boss';
 import type { BossEncounter } from '../entities/BossEncounter';
+import { Hittable } from '../entities/Hittable';
 import { AttackEvent, Player, SlamEvent } from '../entities/Player';
 import { Pickup } from '../entities/Pickups';
 import { Zombie } from '../entities/Zombie';
+
+// A self-driving water enemy (Fish/Eel): a Hittable that also updates from the
+// scene clock. The base owns the group + all combat plumbing; Task 15 populates
+// it from def.water. Left empty, it is a no-op on Levels 1-3.
+type WaterEnemy = Phaser.GameObjects.GameObject &
+  Hittable & { update(time: number, delta: number): void };
 import { dustPuff, floatText, lit, shockwave } from '../fx/Effects';
 import { GoreSystem } from '../fx/Splatter';
 import { LevelDef } from '../levels';
@@ -38,8 +45,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   protected player!: Player;
   protected solids!: Phaser.Physics.Arcade.StaticGroup;
   protected zombies!: Phaser.GameObjects.Group;
+  // Fish/eel live in their own group so land-zombie wiring is untouched; both
+  // groups flow through the same Hittable combat/contact/straggler plumbing.
+  protected waterEnemies!: Phaser.GameObjects.Group;
   protected pickups!: Phaser.GameObjects.Group;
-  private contactCooldown = new Map<Zombie, number>();
+  private contactCooldown = new Map<Hittable, number>();
 
   private boss: BossEncounter | null = null;
   private bossTriggered = false;
@@ -133,6 +143,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     }
     this.physics.add.collider(this.zombies, this.solids);
 
+    // --- Water enemies (fish/eel) ---
+    // Empty infrastructure here; Task 15 populates it from def.water on Level 4.
+    // No solid collider — fish/eel are neutral-buoyancy hoverers, not grounded.
+    this.waterEnemies = this.add.group();
+
     // --- Pickups ---
     this.pickups = this.add.group();
     this.physics.add.collider(this.pickups, this.solids);
@@ -143,16 +158,12 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       if (wasKey) this.onKeyCollected();
     });
 
-    // --- Contact damage ---
+    // --- Contact damage --- (zombies + water enemies share the cooldown map)
     this.physics.add.overlap(this.player, this.zombies, (_p, zombieObj) => {
-      const z = zombieObj as Zombie;
-      if (z.isDead() || this.player.isDying) return;
-      const now = this.time.now;
-      const last = this.contactCooldown.get(z) ?? 0;
-      if (now - last > ZOMBIE.contactCooldownMs) {
-        this.contactCooldown.set(z, now);
-        this.player.takeDamage(z.getDamage(), z.x, 'contact');
-      }
+      this.handleContact(zombieObj as Zombie);
+    });
+    this.physics.add.overlap(this.player, this.waterEnemies, (_p, enemyObj) => {
+      this.handleContact(enemyObj as WaterEnemy);
     });
 
     this.wireCombatEvents();
@@ -301,22 +312,44 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   // Combat wiring
   // ------------------------------------------------------------------
 
+  // Shared contact-damage gate for both zombies and water enemies, keyed by the
+  // one cooldown map so a swimmer and a zombie can't stack hits within a tick.
+  private handleContact(h: Hittable) {
+    if (h.isDead() || this.player.isDying) return;
+    const now = this.time.now;
+    const last = this.contactCooldown.get(h) ?? 0;
+    if (now - last > ZOMBIE.contactCooldownMs) {
+      this.contactCooldown.set(h, now);
+      this.player.takeDamage(h.contactDamage, h.x, 'contact');
+    }
+  }
+
   private wireCombatEvents() {
     this.events.on('player-attack', ({ hitbox, damage, isFinisher }: AttackEvent) => {
-      const collider = this.physics.add.overlap(hitbox, this.zombies, (_hb, zombieObj) => {
-        const z = zombieObj as Zombie;
-        this.applyHit(hitbox, z, damage, isFinisher, false);
+      const zc = this.physics.add.overlap(hitbox, this.zombies, (_hb, zombieObj) => {
+        this.applyHit(hitbox, zombieObj as Zombie, damage, isFinisher, false);
       });
-      hitbox.once('destroy', () => collider.destroy());
+      const wc = this.physics.add.overlap(hitbox, this.waterEnemies, (_hb, enemyObj) => {
+        this.applyHit(hitbox, enemyObj as WaterEnemy, damage, isFinisher, false);
+      });
+      hitbox.once('destroy', () => {
+        zc.destroy();
+        wc.destroy();
+      });
       this.wireBossHit(hitbox, damage, isFinisher, false);
     });
 
     this.events.on('player-slam', ({ hitbox, damage }: SlamEvent) => {
-      const collider = this.physics.add.overlap(hitbox, this.zombies, (_hb, zombieObj) => {
-        const z = zombieObj as Zombie;
-        this.applyHit(hitbox, z, damage, true, true);
+      const zc = this.physics.add.overlap(hitbox, this.zombies, (_hb, zombieObj) => {
+        this.applyHit(hitbox, zombieObj as Zombie, damage, true, true);
       });
-      hitbox.once('destroy', () => collider.destroy());
+      const wc = this.physics.add.overlap(hitbox, this.waterEnemies, (_hb, enemyObj) => {
+        this.applyHit(hitbox, enemyObj as WaterEnemy, damage, true, true);
+      });
+      hitbox.once('destroy', () => {
+        zc.destroy();
+        wc.destroy();
+      });
       this.wireBossHit(hitbox, damage, true, true);
     });
 
@@ -381,19 +414,19 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
   private applyHit(
     hitbox: Phaser.GameObjects.Rectangle,
-    z: Zombie,
+    h: Hittable,
     damage: number,
     big: boolean,
     isSlam: boolean
   ) {
-    if (z.isDead() || !z.active) return;
+    if (h.isDead() || !h.active) return;
     const hitSet = hitbox.getData('hitSet') as Set<unknown>;
-    if (hitSet.has(z)) return;
-    hitSet.add(z);
+    if (hitSet.has(h)) return;
+    hitSet.add(h);
 
-    z.takeDamage(damage);
+    const died = h.takeHit(damage);
     SynthAudio.splat(big);
-    this.gore.burst(z.x, z.y, z.isDead());
+    this.gore.burst(h.x, h.y, died);
 
     if (isSlam) {
       this.player.pogoBounce();
@@ -404,8 +437,8 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       this.juice.shake(0.004, 90);
     }
 
-    if (z.isDead()) {
-      this.onZombieKilled(z);
+    if (died) {
+      this.onEnemyKilled(h);
     }
   }
 
@@ -431,29 +464,35 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     });
   }
 
-  private onZombieKilled(z: Zombie) {
+  // Shared kill-reward path for every Hittable. Coins + kill-streak credit are
+  // universal (design ruling: fish/eel reward like a zombie kill); the power-orb
+  // and heart drops are zombie-variant specific, so they stay behind an
+  // instanceof branch that fish/eel simply skip.
+  private onEnemyKilled(h: Hittable) {
     SynthAudio.splat(true);
-    this.gore.stampDecal(z.x, (z.body as Phaser.Physics.Arcade.Body).bottom, true);
+    this.gore.stampDecal(h.x, (h.body as Phaser.Physics.Arcade.Body).bottom, true);
 
     const streak = this.gameState.registerKill(this.time.now);
     if (streak >= 2) {
-      floatText(this, z.x, z.y - 60, `COMBO x${streak}`, '#ff8833', 15);
+      floatText(this, h.x, h.y - 60, `COMBO x${streak}`, '#ff8833', 15);
     }
 
-    this.pickups.add(new Pickup(this, z.x, z.y - 20, 'coin'));
-    if (z.powerUp) {
-      this.pickups.add(new Pickup(this, z.x, z.y - 30, 'orb', z.powerUp));
-      if (z.displayName) {
-        const hex = `#${POWERUPS[z.powerUp].color.toString(16).padStart(6, '0')}`;
-        floatText(this, z.x, z.y - 84, `${z.displayName} DOWN!`, hex, 16);
+    this.pickups.add(new Pickup(this, h.x, h.y - 20, 'coin'));
+    if (h instanceof Zombie) {
+      if (h.powerUp) {
+        this.pickups.add(new Pickup(this, h.x, h.y - 30, 'orb', h.powerUp));
+        if (h.displayName) {
+          const hex = `#${POWERUPS[h.powerUp].color.toString(16).padStart(6, '0')}`;
+          floatText(this, h.x, h.y - 84, `${h.displayName} DOWN!`, hex, 16);
+        }
+      }
+      if (Math.random() < ZOMBIE.heartDropChance) {
+        this.pickups.add(new Pickup(this, h.x + 14, h.y - 24, 'heart'));
       }
     }
-    if (Math.random() < ZOMBIE.heartDropChance) {
-      this.pickups.add(new Pickup(this, z.x + 14, z.y - 24, 'heart'));
-    }
 
-    this.contactCooldown.delete(z);
-    z.die();
+    this.contactCooldown.delete(h);
+    h.die();
   }
 
   // ------------------------------------------------------------------
@@ -518,6 +557,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
       // Clear stragglers before shrinking the world
       this.zombies.getChildren().slice().forEach((z) => (z as Zombie).destroy());
+      this.waterEnemies.getChildren().slice().forEach((e) => (e as WaterEnemy).destroy());
       this.contactCooldown.clear();
 
       this.time.delayedCall(1100, () => {
@@ -611,6 +651,14 @@ export abstract class BaseLevelScene extends Phaser.Scene {
         this.gore.burst(z.x, z.y, false);
         z.destroy();
       });
+    this.waterEnemies
+      .getChildren()
+      .slice()
+      .forEach((eObj) => {
+        const e = eObj as WaterEnemy;
+        this.gore.burst(e.x, e.y, false);
+        e.destroy();
+      });
     this.contactCooldown.clear();
 
     // The level key floats down at the encounter's returned spot (== bossY - 60)
@@ -661,6 +709,10 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
     for (const z of this.zombies.getChildren().slice()) {
       if (z.active) (z as Zombie).update(time, delta);
+    }
+
+    for (const e of this.waterEnemies.getChildren().slice()) {
+      if (e.active) (e as WaterEnemy).update(time, delta);
     }
 
     for (const p of this.pickups.getChildren()) {

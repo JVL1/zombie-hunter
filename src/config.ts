@@ -143,6 +143,33 @@ export const WATER = {
   exitImpulse: -120,       // extra pop when crossing the surface upward
 } as const;
 
+// Zombie Fish — small no-gravity pack darter (Level 4). Wanders near its school
+// anchor until the player enters aggro, then darts along a re-aimed straight-line
+// vector on a fixed cadence.
+export const FISH = {
+  hp: 14,
+  contactDamage: 6,
+  aggroRange: 220,
+  dartSpeed: 200,
+  reaimMs: 600,          // cadence between dart re-aims while chasing
+  wanderSpeed: 45,
+  schoolRadius: 70,      // drift this far from the anchor before heading back
+  wanderMinMs: 700,
+  wanderMaxMs: 1500,
+} as const;
+
+// Zombie Eel — anchored wreck ambusher (Level 4). Coils at its anchor,
+// telegraphs (reusing ZOMBIE lunge windup timing), lunges ~lungeDistance along
+// the player vector, then swims back to the anchor to re-coil.
+export const EEL = {
+  hp: 45,
+  contactDamage: 14,
+  aggroRange: 260,
+  lungeDistance: 300,
+  lungeSpeed: 380,
+  returnSpeed: 130,
+} as const;
+
 export const ZOMBIE = {
   aggroRange: 240,
   deaggroRange: 330,
