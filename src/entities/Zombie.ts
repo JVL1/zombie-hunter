@@ -7,6 +7,13 @@ import { Hittable } from './Hittable';
 
 export type { ZombieVariant } from '../config';
 
+// Level 4 drowned-swimmer surface containment (Task 15). The swim path has no
+// ceiling, so a chasing drowned would breach the surface and swim above the
+// water; these keep its body clamped below the surface line and give a
+// de-aggroed drowned a comfortable rest depth instead of stranding it at the top.
+const DROWNED_SUBMERGE_MARGIN = 10; // px the body top stays below surfaceY
+const DROWNED_REST_DEPTH = 110; // px below the surface a patrolling drowned settles toward
+
 enum ZombieState {
   PATROL,
   CHASE,
@@ -34,6 +41,9 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite implements Hittable {
   private nextGroanAt = 0;
   private dying = false;
   private windupTween: Phaser.Tweens.Tween | null = null;
+  // Level 4 only: the water surface line for drowned swim containment. Undefined
+  // on Levels 1-3, so the swim clamp below is dead code there.
+  private swimSurfaceY?: number;
   private healthBar: Phaser.GameObjects.Rectangle | null = null;
   private healthBarBg: Phaser.GameObjects.Rectangle | null = null;
 
@@ -76,6 +86,12 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite implements Hittable {
 
   setTarget(target: Phaser.Physics.Arcade.Sprite) {
     this.target = target;
+  }
+
+  // Level 4 wires the water surface (Task 15); only the 'drowned' swim path reads
+  // it, so land zombies (movement undefined/'ground') are provably unaffected.
+  setWaterProfile(water?: { surfaceY: number }) {
+    this.swimSurfaceY = water?.surfaceY;
   }
 
   getDamage(): number {
@@ -310,6 +326,7 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite implements Hittable {
   // windup-interrupt logic still works.
   private swimUpdate(time: number, delta: number) {
     const body = this.body as Phaser.Physics.Arcade.Body;
+    this.containBelowSurface(body);
 
     switch (this.state_) {
       case ZombieState.WINDUP:
@@ -397,8 +414,27 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite implements Hittable {
     }
     this.setVelocityX(this.patrolDirection * this.vdef.patrolSpeed);
     // Gentle vertical bob around neutral so it hovers rather than drifting off.
-    this.setVelocityY(Math.sin(time / 500) * 18);
+    let vy = Math.sin(time / 500) * 18;
+    // A de-aggroed drowned that had chased the player up to the surface sinks
+    // back toward a rest depth instead of stranding hovering at the top (L4).
+    if (this.swimSurfaceY !== undefined) {
+      const restY = this.swimSurfaceY + DROWNED_REST_DEPTH;
+      if (this.y < restY - 8) vy += 45;
+    }
+    this.setVelocityY(vy);
     this.setFlipX(this.patrolDirection < 0);
+  }
+
+  // Level 4 drowned containment: hold the body top below the surface so the
+  // ceiling-less swim chase can't breach the water and swim above it. No-op with
+  // no surface profile (Levels 1-3 never call setWaterProfile).
+  private containBelowSurface(body: Phaser.Physics.Arcade.Body) {
+    if (this.swimSurfaceY === undefined) return;
+    const minTop = this.swimSurfaceY + DROWNED_SUBMERGE_MARGIN;
+    if (body.top < minTop) {
+      this.y += minTop - body.top;
+      if (body.velocity.y < 0) this.setVelocityY(0);
+    }
   }
 
   private updateHealthBar() {

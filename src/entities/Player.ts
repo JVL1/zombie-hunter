@@ -106,6 +106,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.waterProfile = water;
   }
 
+  // Water levels (Task 15): the scene records a safe underwater respawn point
+  // (the player is never grounded underwater, so lastGroundedPos would be stale)
+  // and pushes it here. revive() then respawns at this anchor, clamped to bounds.
+  setReviveAnchor(x: number, y: number) {
+    this.lastGroundedPos.x = x;
+    this.lastGroundedPos.y = y;
+  }
+
   get inWater(): boolean {
     return this._inWater;
   }

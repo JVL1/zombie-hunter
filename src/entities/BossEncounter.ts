@@ -44,6 +44,11 @@ export interface BossEncounter {
     onHit: (x: number, y: number, died: boolean) => void
   ): void;
 
+  // Optional cinematic freeze. The Kraken pauses/holds its bubbles during the
+  // boss cutscene (including the rise); the walker has no projectiles and does
+  // not implement it, so the scene calls it with optional chaining.
+  setFrozen?(frozen: boolean): void;
+
   // Play the corpse presentation and return the key-drop spot.
   playDeath(): { x: number; y: number };
 }
