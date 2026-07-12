@@ -325,8 +325,16 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite implements Hittable {
   // (`state_`/`stateUntil`/`nextLungeAt`/`windupTween`) so takeDamage's
   // windup-interrupt logic still works.
   private swimUpdate(time: number, delta: number) {
+    this.swimMove(time, delta);
+    // Containment is the LAST word before the physics step. The chase/lunge
+    // states can aim upward at a player near the surface, so clamping AFTER
+    // them (not before) keeps the drowned pinned just below the surface line
+    // instead of zeroing a velocity the state machine immediately re-applies.
+    this.containBelowSurface(this.body as Phaser.Physics.Arcade.Body);
+  }
+
+  private swimMove(time: number, delta: number) {
     const body = this.body as Phaser.Physics.Arcade.Body;
-    this.containBelowSurface(body);
 
     switch (this.state_) {
       case ZombieState.WINDUP:

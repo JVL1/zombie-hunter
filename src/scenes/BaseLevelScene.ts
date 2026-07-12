@@ -763,6 +763,9 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       this.add
         .particles(vent.x, WORLD.groundY, Assets.VENT_BUBBLE, {
           x: { min: -vent.width / 2, max: vent.width / 2 },
+          // Fill the whole topY→lakebed refill band so the breathable column is
+          // visible wherever the inVent geometry test (same vent.topY) accepts it.
+          y: { min: vent.topY - WORLD.groundY, max: 0 },
           speedY: { min: -60, max: -110 },
           speedX: { min: -10, max: 10 },
           scale: { start: 0.6, end: 1.3 },
@@ -922,7 +925,9 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     }
 
     // Breathing/air tick (water levels only) — after player.update() so
-    // canBreathe reflects this frame's position; frozen during intro + cinematic.
+    // canBreathe reflects this frame's position (except during the cinematic,
+    // where player.update() is skipped but `frozen` suppresses the breathing
+    // read anyway). Air is frozen through the intro banner + boss cinematic.
     if (this.def.water) this.tickWater(delta);
 
     for (const z of this.zombies.getChildren().slice()) {
