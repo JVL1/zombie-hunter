@@ -89,6 +89,36 @@ describe('tickAir', () => {
     expect(result.state.msToNextTick).toBe(150);
   });
 
+  it('crossing to zero counts only post-depletion time toward the drown cadence', () => {
+    // 100ms of air left, a 250ms frame: only the trailing 150ms is drowning time
+    const state = airState({ airMs: 100 });
+    const result = tickAir(state, 250, submerged);
+    expect(result.state.airMs).toBe(0);
+    expect(result.effects.damageTicks).toBe(0);
+    expect(result.state.msToNextTick).toBe(150);
+  });
+
+  it('clamps negative dt to zero (no air gained while drowning)', () => {
+    const state = createAirState();
+    const result = tickAir(state, -100, submerged);
+    expect(result.state.airMs).toBe(WATER.airMs);
+  });
+
+  it('refilling clears a carried drown cadence', () => {
+    const state = airState({ airMs: 0, msToNextTick: 750 });
+    const result = tickAir(state, 100, { ...submerged, breathing: true });
+    expect(result.state.msToNextTick).toBe(0);
+  });
+
+  it('warning re-fires after climbing back above warnAtMs and dipping again', () => {
+    const phase1 = tickAir(airState({ airMs: WATER.warnAtMs + 100 }), 200, submerged);
+    const phase2 = tickAir(phase1.state, 100, { ...submerged, breathing: true });
+    const phase3 = tickAir(phase2.state, 250, submerged);
+    expect(phase1.effects.warningStarted).toBe(true);
+    expect(phase2.state.warned).toBe(false);
+    expect(phase3.effects.warningStarted).toBe(true);
+  });
+
   it('scuba grants infinite air: no drain, no ticks while durability > 0', () => {
     const state = grantScuba(airState({ airMs: 500, msToNextTick: 900, warned: true }));
     const result = tickAir(state, 250, submerged);
@@ -103,6 +133,11 @@ describe('restoreAir', () => {
     const result = restoreAir(state, 0.5);
     expect(result.airMs).toBe(WATER.airMs * 0.5);
     expect(result).toMatchObject({ msToNextTick: 0, warned: false });
+  });
+
+  it('clamps ratio > 1 to full air', () => {
+    const result = restoreAir(airState({ airMs: 0 }), 2);
+    expect(result.airMs).toBe(WATER.airMs);
   });
 });
 

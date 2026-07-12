@@ -47,7 +47,7 @@ export function scubaHit(state: AirState): { state: AirState; broke: boolean } {
 }
 
 export function restoreAir(state: AirState, ratio: number): AirState {
-  const airMs = WATER.airMs * ratio;
+  const airMs = Math.min(WATER.airMs, WATER.airMs * ratio);
   return {
     ...state,
     airMs,
@@ -65,7 +65,7 @@ export function tickAir(
     return { state, effects: noEffects() };
   }
 
-  const dt = Math.min(dtMs, 250);
+  const dt = Math.max(0, Math.min(dtMs, 250));
 
   if (mode.breathing || mode.inVent) {
     const airMs = Math.min(WATER.airMs, state.airMs + dt * WATER.refillRatio);
@@ -91,7 +91,9 @@ export function tickAir(
     };
   }
 
-  const tickCarry = state.msToNextTick + dt;
+  // Only time spent after air hit zero counts toward the drown cadence — on the
+  // frame air crosses to zero, the pre-depletion slice was still breathable.
+  const tickCarry = state.msToNextTick + Math.max(0, dt - state.airMs);
   const damageTicks = Math.floor(tickCarry / WATER.drownTickMs);
   return {
     state: {
