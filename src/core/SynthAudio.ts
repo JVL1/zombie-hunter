@@ -7,6 +7,7 @@ class SynthAudioImpl {
   private noiseBuf: AudioBuffer | null = null;
   private musicTimer: number | null = null;
   private musicGain: GainNode | null = null;
+  private lastHeartbeatAt = 0;
 
   unlock() {
     if (!this.ctx) {
@@ -172,6 +173,16 @@ class SynthAudioImpl {
 
   gameOver() {
     [440, 349, 262, 196].forEach((f, i) => this.osc('sawtooth', f, f * 0.97, 0.4, 0.3, i * 0.3));
+  }
+
+  // Drowning pulse — low sine double-thump, rate-limited so a per-frame
+  // drowning caller never stacks it into a drone.
+  heartbeat() {
+    if (!this.ctx) return;
+    if (this.t < this.lastHeartbeatAt + 0.6) return;
+    this.lastHeartbeatAt = this.t;
+    this.osc('sine', 62, 40, 0.16, 0.4);
+    this.osc('sine', 58, 38, 0.18, 0.3, 0.18);
   }
 
   // --- Music: dark ambient drone + heartbeat pulse, scheduled bar by bar ---

@@ -1,12 +1,23 @@
 import Phaser from 'phaser';
-import { Assets } from '../assets';
-import { COMBAT, GAME_W, POWERUPS, type PowerUpType } from '../config';
+import { Assets, ScubaHudFrames } from '../assets';
+import { COMBAT, GAME_H, GAME_W, POWERUPS, type PowerUpType } from '../config';
 import { GameState } from '../core/GameState';
+import { SynthAudio } from '../core/SynthAudio';
 
 type BuffHudSlot = {
   type: PowerUpType;
   container: Phaser.GameObjects.Container;
   bar: Phaser.GameObjects.Rectangle;
+};
+
+// Per-frame air snapshot published to the registry by water levels only
+// (BaseLevelScene sets 'airHud'; Levels 1-3 never do). See Task 15.
+type AirHudSnapshot = {
+  airMs: number;
+  maxAirMs: number;
+  scubaDurability: number;
+  warned: boolean;
+  drowning: boolean;
 };
 
 // Overlay UI: health bar with damage ghost, coins, key slots, combo meter.
@@ -28,6 +39,17 @@ export class HUDScene extends Phaser.Scene {
   private comboText!: Phaser.GameObjects.Text;
   private comboBar!: Phaser.GameObjects.Rectangle;
 
+  // Air UI (water levels only). Created hidden; shown while the 'airHud'
+  // registry key exists.
+  private airPanel!: Phaser.GameObjects.Rectangle;
+  private airBarBg!: Phaser.GameObjects.Rectangle;
+  private airFill!: Phaser.GameObjects.Rectangle;
+  private scubaIcon!: Phaser.GameObjects.Image;
+  private airWarnText!: Phaser.GameObjects.Text;
+  private drownOverlay!: Phaser.GameObjects.Rectangle;
+  private drownTween?: Phaser.Tweens.Tween;
+  private drowning = false;
+
   constructor() {
     super({ key: 'HUD' });
   }
@@ -41,6 +63,8 @@ export class HUDScene extends Phaser.Scene {
     this.lastConsumableCounts = [-1, -1, -1];
     this.consumablesShown = false;
     this.buffSlots = [];
+    this.drowning = false;
+    this.drownTween = undefined;
 
     // Panel
     this.add.rectangle(14, 14, 246, 74, 0x000000, 0.45).setOrigin(0);
@@ -109,6 +133,46 @@ export class HUDScene extends Phaser.Scene {
     this.comboBar = this.add
       .rectangle(GAME_W / 2, 110, 120, 5, 0xff8833)
       .setOrigin(0.5)
+      .setVisible(false);
+
+    // Air UI (water levels only) — dark panel beside the buff row, a scuba
+    // crack icon, a draining blue→red bar, and a blinking low-air warning.
+    // All start hidden; update() reveals them only when 'airHud' exists.
+    this.airPanel = this.add
+      .rectangle(270, 14, 210, 40, 0x000000, 0.45)
+      .setOrigin(0)
+      .setVisible(false);
+    this.scubaIcon = this.add
+      .image(290, 34, ScubaHudFrames[0])
+      .setScale(1.1)
+      .setVisible(false);
+    this.airBarBg = this.add
+      .rectangle(312, 34, 156, 14, 0x1a1a1a)
+      .setOrigin(0, 0.5)
+      .setStrokeStyle(1, 0x000000)
+      .setVisible(false);
+    this.airFill = this.add
+      .rectangle(314, 34, 152, 8, 0x33aaff)
+      .setOrigin(0, 0.5)
+      .setVisible(false);
+    this.airWarnText = this.add
+      .text(270, 58, 'GO UP TO BREATHE!', {
+        fontFamily: 'monospace',
+        fontSize: '13px',
+        color: '#ff5555',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 4,
+      })
+      .setVisible(false);
+
+    // Screen-space red drowning pulse — plain alpha tween, Canvas-safe
+    // (NOT camera.postFX, which is WebGL-only).
+    this.drownOverlay = this.add
+      .rectangle(0, 0, GAME_W, GAME_H, 0xff0000, 0)
+      .setOrigin(0)
+      .setScrollFactor(0)
+      .setDepth(1000)
       .setVisible(false);
 
     // Controls hint, fades away
@@ -188,6 +252,64 @@ export class HUDScene extends Phaser.Scene {
     } else {
       this.comboText.setVisible(false);
       this.comboBar.setVisible(false);
+    }
+
+    this.updateAirHud(time);
+  }
+
+  // Air bar + scuba icon + drowning FX. Renders NOTHING and plays no
+  // heartbeat unless the current level published an 'airHud' snapshot
+  // (Levels 1-3 never do, so this is fully inert there).
+  private updateAirHud(time: number) {
+    const snap = this.registry.get('airHud') as AirHudSnapshot | undefined;
+    if (!snap) {
+      if (this.drowning) this.setDrowning(false);
+      return;
+    }
+
+    const ratio = Phaser.Math.Clamp(snap.airMs / snap.maxAirMs, 0, 1);
+    this.airPanel.setVisible(true);
+    this.airBarBg.setVisible(true);
+    this.airFill.setVisible(true);
+    this.airFill.width = 152 * ratio;
+    this.airFill.fillColor = snap.warned
+      ? 0xff3333
+      : ratio > 0.5
+        ? 0x33aaff
+        : 0xffaa33;
+
+    // Scuba crack icon: fewer durability = more cracks (frame 5 - durability);
+    // 0 durability = no scuba worn, so hide it.
+    if (snap.scubaDurability > 0) {
+      const idx = Phaser.Math.Clamp(5 - snap.scubaDurability, 0, 4);
+      this.scubaIcon.setTexture(ScubaHudFrames[idx]).setVisible(true);
+    } else {
+      this.scubaIcon.setVisible(false);
+    }
+
+    // Blink the warning below the warn threshold.
+    this.airWarnText.setVisible(snap.warned && Math.floor(time / 300) % 2 === 0);
+
+    // Drowning: red screen pulse + heartbeat (rate-limited in SynthAudio).
+    if (snap.drowning !== this.drowning) this.setDrowning(snap.drowning);
+    if (snap.drowning) SynthAudio.heartbeat();
+  }
+
+  private setDrowning(on: boolean) {
+    this.drowning = on;
+    if (on) {
+      this.drownOverlay.setVisible(true);
+      this.drownTween = this.tweens.add({
+        targets: this.drownOverlay,
+        alpha: { from: 0.08, to: 0.34 },
+        duration: 460,
+        yoyo: true,
+        repeat: -1,
+      });
+    } else {
+      this.drownTween?.remove();
+      this.drownTween = undefined;
+      this.drownOverlay.setVisible(false).setAlpha(0);
     }
   }
 
