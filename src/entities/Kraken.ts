@@ -122,10 +122,15 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
     // (which would double bubble damage) or leak. The collider is stored so
     // destroy() can remove it — symmetric with the attack-hitbox teardown.
     this.bubbleOverlap?.destroy();
+    // Single sprite (player) first, group second — Phaser invokes the overlap
+    // callback as (sprite, groupMember) regardless of argument order (it swaps a
+    // group-first call internally). Passing the group first here made the params
+    // arrive reversed, so takeDamage was called on the bubble → runtime crash.
+    // This matches every other overlap(single, group, ...) in the codebase.
     this.bubbleOverlap = this.scene.physics.add.overlap(
-      this.bubbles,
       target,
-      (bubbleObj, playerObj) => {
+      this.bubbles,
+      (playerObj, bubbleObj) => {
         if (this.isDead()) return; // a dead kraken's in-flight bubbles stop hurting
         const bubble = bubbleObj as Phaser.Physics.Arcade.Sprite;
         if (!bubble.active) return;
