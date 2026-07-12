@@ -5,13 +5,15 @@ import { GameState } from '../core/GameState';
 import { SynthAudio } from '../core/SynthAudio';
 import { floatText, lit } from '../fx/Effects';
 
-export type PickupKind = 'coin' | 'heart' | 'key' | 'orb';
+export type PickupKind = 'coin' | 'heart' | 'key' | 'orb' | 'scuba';
 
-// Coins/hearts/keys/orbs dropped into the world. Coins magnet to the player when close.
+// Coins/hearts/keys/orbs/scuba gear dropped into the world. Coins magnet to the
+// player when close; scuba (Level 4) is a static, buoyant air-tank pickup.
 export class Pickup extends Phaser.Physics.Arcade.Sprite {
   kind: PickupKind;
   powerUp?: PowerUpType;
   private magnetRange: number;
+  private floatTween?: Phaser.Tweens.Tween;
 
   constructor(scene: Phaser.Scene, x: number, y: number, kind: Exclude<PickupKind, 'orb'>);
   constructor(scene: Phaser.Scene, x: number, y: number, kind: 'orb', powerUp: PowerUpType);
@@ -29,7 +31,9 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
           ? Assets.HEART
           : kind === 'key'
             ? Assets.KEY
-            : OrbTextures[powerUp!];
+            : kind === 'scuba'
+              ? Assets.SCUBA_PICKUP
+              : OrbTextures[powerUp!];
     super(scene, x, y, tex);
     this.kind = kind;
     this.powerUp = powerUp;
@@ -39,9 +43,16 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
     scene.physics.add.existing(this);
     lit(this);
     this.setDepth(4);
-    this.setBounce(0.5);
-    this.setVelocity((Math.random() - 0.5) * 120, -180);
     this.setCollideWorldBounds(true);
+    if (kind === 'scuba') {
+      // Static air tank: no launch pop, no bounce, no sink. The scene calls
+      // floatInWater() on it (it spawns below the surface) for the gentle bob.
+      (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+      this.setVelocity(0, 0);
+    } else {
+      this.setBounce(0.5);
+      this.setVelocity((Math.random() - 0.5) * 120, -180);
+    }
 
     if (kind === 'coin') {
       // Fake spin
@@ -64,7 +75,10 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
         ease: 'Sine.easeInOut',
       });
     }
-    if ((kind === 'key' || kind === 'orb') && scene.sys.renderer.type === Phaser.WEBGL) {
+    if (
+      (kind === 'key' || kind === 'orb' || kind === 'scuba') &&
+      scene.sys.renderer.type === Phaser.WEBGL
+    ) {
       const color = kind === 'orb' && powerUp ? POWERUPS[powerUp].color : 0xffdd66;
       const light = scene.lights.addLight(x, y, 140, color, 1.2);
       const follow = () => {
@@ -82,10 +96,40 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
     this.magnetRange = Number.POSITIVE_INFINITY;
   }
 
+  // Water levels: keep a pickup spawned below the surface from sinking out of
+  // reach. Dynamic bodies overwrite a direct y-tween each physics step, so the
+  // gentle bob oscillates the body's velocity instead — a symmetric sine yoyo
+  // whose integral over a full cycle is zero, so the pickup never drifts away.
+  floatInWater() {
+    const body = this.body as Phaser.Physics.Arcade.Body | null;
+    if (!body) return;
+    body.setAllowGravity(false);
+    this.setBounce(0);
+    this.setVelocity(0, 0);
+    this.floatTween = this.scene.tweens.add({
+      targets: body.velocity,
+      y: { from: -14, to: 14 },
+      duration: 1600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+    this.once('destroy', () => {
+      this.floatTween?.stop();
+      this.floatTween = undefined;
+    });
+  }
+
   updateMagnet(player: Phaser.Physics.Arcade.Sprite) {
     if (!this.active || this.magnetRange === 0 || !this.body) return;
     const dist = Phaser.Math.Distance.BetweenPoints(this, player);
     if (dist < this.magnetRange) {
+      // The bob tween would fight the magnet's velocity — stop it once we start
+      // homing (matters for underwater orbs that magnetize on the boss trigger).
+      if (this.floatTween) {
+        this.floatTween.stop();
+        this.floatTween = undefined;
+      }
       const angle = Phaser.Math.Angle.BetweenPoints(this, player);
       const body = this.body as Phaser.Physics.Arcade.Body;
       body.setAllowGravity(false);
@@ -110,6 +154,9 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
         break;
       case 'key':
         SynthAudio.key();
+        break;
+      case 'scuba':
+        // No self-contained effect: the scene grants scuba air + plays the SFX.
         break;
       case 'orb':
         if (this.powerUp) {

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Assets } from '../assets';
 import { BOSS, GAME_H, GAME_W, POWERUPS, SHOP, WORLD, ZOMBIE, ZombieVariant } from '../config';
+import { AirState, createAirState, grantScuba } from '../core/air';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
 import { Juice } from '../core/Juice';
@@ -51,6 +52,10 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   protected pickups!: Phaser.GameObjects.Group;
   private contactCooldown = new Map<Hittable, number>();
 
+  // Breathing/scuba runtime for water levels. Null on Levels 1-3 (no def.water);
+  // Task 13 only establishes it + the scuba grant, Task 15 drives the tick loop.
+  protected air: AirState | null = null;
+
   private boss: BossEncounter | null = null;
   private bossTriggered = false;
   private cinematic = false;
@@ -87,6 +92,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.boss = null;
     this.bossTriggered = false;
     this.cinematic = false;
+    this.air = null;
     this.bgLayers = [];
     this.flickerLights = [];
     this.contactCooldown.clear();
@@ -154,9 +160,19 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.pickups, (_p, pickupObj) => {
       const pickup = pickupObj as Pickup;
       const wasKey = pickup.kind === 'key';
+      const wasScuba = pickup.kind === 'scuba';
       pickup.collect(this.player);
       if (wasKey) this.onKeyCollected();
+      if (wasScuba) this.onScubaCollected();
     });
+
+    // --- Water level: breathing state + the scuba pickup (Task 15 drives it) ---
+    if (this.def.water) {
+      this.air = createAirState();
+      this.addPickup(
+        new Pickup(this, this.def.water.scuba.x, this.def.water.scuba.y, 'scuba')
+      );
+    }
 
     // --- Contact damage --- (zombies + water enemies share the cooldown map)
     this.physics.add.overlap(this.player, this.zombies, (_p, zombieObj) => {
@@ -476,20 +492,20 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       floatText(this, h.x, h.y - 60, `COMBO x${streak}`, '#ff8833', 15);
     }
 
-    this.pickups.add(new Pickup(this, h.x, h.y - 20, 'coin'));
+    this.addPickup(new Pickup(this, h.x, h.y - 20, 'coin'));
     if (h instanceof Zombie) {
       // Persistent ground blood decal only for grounded enemies — a floating
       // fish/eel would otherwise stain open water. (Design call; revisit w/ Henry.)
       this.gore.stampDecal(h.x, (h.body as Phaser.Physics.Arcade.Body).bottom, true);
       if (h.powerUp) {
-        this.pickups.add(new Pickup(this, h.x, h.y - 30, 'orb', h.powerUp));
+        this.addPickup(new Pickup(this, h.x, h.y - 30, 'orb', h.powerUp));
         if (h.displayName) {
           const hex = `#${POWERUPS[h.powerUp].color.toString(16).padStart(6, '0')}`;
           floatText(this, h.x, h.y - 84, `${h.displayName} DOWN!`, hex, 16);
         }
       }
       if (Math.random() < ZOMBIE.heartDropChance) {
-        this.pickups.add(new Pickup(this, h.x + 14, h.y - 24, 'heart'));
+        this.addPickup(new Pickup(this, h.x + 14, h.y - 24, 'heart'));
       }
     }
 
@@ -665,14 +681,32 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
     // The level key floats down at the encounter's returned spot (== bossY - 60)
     this.time.delayedCall(800, () => {
-      this.pickups.add(new Pickup(this, keySpot.x, keySpot.y, 'key'));
+      this.addPickup(new Pickup(this, keySpot.x, keySpot.y, 'key'));
     });
 
     // Boss bounty: a burst of coins around the corpse
     for (let i = 0; i < SHOP.bossCoinBurst; i++) {
       const spread = (i - (SHOP.bossCoinBurst - 1) / 2) * 18;
-      this.pickups.add(new Pickup(this, bossX + spread, bossY - 40, 'coin'));
+      this.addPickup(new Pickup(this, bossX + spread, bossY - 40, 'coin'));
     }
+  }
+
+  // Single spawn path for every pickup so the underwater buoyancy rule applies
+  // uniformly: on a water level, anything dropped below the surface floats
+  // (gravity off + gentle bob) instead of sinking to the lake bed out of reach.
+  private addPickup(pickup: Pickup): Pickup {
+    this.pickups.add(pickup);
+    if (this.def.water && pickup.y > this.def.water.surfaceY) {
+      pickup.floatInWater();
+    }
+    return pickup;
+  }
+
+  private onScubaCollected() {
+    // grantScuba is pure — reassign the returned state. SynthAudio.key() is the
+    // placeholder ping (reused until Henry wants a custom scuba sound).
+    if (this.air) this.air = grantScuba(this.air);
+    SynthAudio.key();
   }
 
   private onKeyCollected() {
