@@ -26,6 +26,10 @@ export interface KrakenState {
   guardCursor: number;
 }
 
+export interface KrakenEffects {
+  fireBubble: boolean;
+}
+
 export function createKrakenState(def: KrakenBossDef, now = 0): KrakenState {
   // Tentacles collectively add half a boss health bar, split evenly. Rounding
   // up keeps per-tentacle HP integral for the Phaser entity and HUD glue.
@@ -83,7 +87,7 @@ export function hitTentacle(
 }
 
 export function hitHead(state: KrakenState, damage: number, now: number): KrakenState {
-  if (isDead(state) || state.phase !== 'window') {
+  if (isDead(state) || state.phase !== 'window' || now >= state.windowEndsAt) {
     return { ...state };
   }
 
@@ -103,15 +107,24 @@ export function hitHead(state: KrakenState, damage: number, now: number): Kraken
   };
 }
 
-export function tick(state: KrakenState, now: number): KrakenState {
+export function tick(
+  state: KrakenState,
+  now: number
+): { state: KrakenState; effects: KrakenEffects } {
+  let fireBubble = false;
+
   if (isDead(state)) {
-    return { ...state, phase: 'dead', activeGuard: null };
+    return {
+      state: { ...state, phase: 'dead', activeGuard: null },
+      effects: { fireBubble },
+    };
   }
 
   const enraged = state.enraged || state.hp <= state.maxHp * 0.5;
   const interval = enraged ? state.enragedBubbleIntervalMs : state.bubbleIntervalMs;
   let nextBubbleAt = state.nextBubbleAt;
   if (now >= nextBubbleAt) {
+    fireBubble = true;
     nextBubbleAt += (Math.floor((now - nextBubbleAt) / interval) + 1) * interval;
   }
 
@@ -122,20 +135,26 @@ export function tick(state: KrakenState, now: number): KrakenState {
   );
 
   if (state.phase !== 'window' || now < state.windowEndsAt) {
-    return { ...state, tentacles, enraged, nextBubbleAt };
+    return {
+      state: { ...state, tentacles, enraged, nextBubbleAt },
+      effects: { fireBubble },
+    };
   }
 
   const activeGuard = nextAliveTentacle(tentacles, state.guardCursor);
   if (activeGuard !== null) {
     return {
-      ...state,
-      phase: 'guarded',
-      tentacles,
-      activeGuard,
-      guardCursor: activeGuard,
-      windowEndsAt: 0,
-      enraged,
-      nextBubbleAt,
+      state: {
+        ...state,
+        phase: 'guarded',
+        tentacles,
+        activeGuard,
+        guardCursor: activeGuard,
+        windowEndsAt: 0,
+        enraged,
+        nextBubbleAt,
+      },
+      effects: { fireBubble },
     };
   }
 
@@ -143,18 +162,18 @@ export function tick(state: KrakenState, now: number): KrakenState {
   const regrowTimes = tentacles.flatMap((tentacle) =>
     tentacle.regrowAt === null ? [] : [tentacle.regrowAt]
   );
+  // every dead tentacle has a regrowAt, so regrowTimes is always non-empty here.
   return {
-    ...state,
-    tentacles,
-    activeGuard: null,
-    windowEndsAt: regrowTimes.length > 0 ? Math.min(...regrowTimes) : state.windowEndsAt,
-    enraged,
-    nextBubbleAt,
+    state: {
+      ...state,
+      tentacles,
+      activeGuard: null,
+      windowEndsAt: Math.min(...regrowTimes),
+      enraged,
+      nextBubbleAt,
+    },
+    effects: { fireBubble },
   };
-}
-
-export function bubbleDue(state: KrakenState, now: number): boolean {
-  return !isDead(state) && now >= state.nextBubbleAt;
 }
 
 export function isDead(state: KrakenState): boolean {

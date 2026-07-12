@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { KrakenBossDef } from '../levels';
 import {
-  bubbleDue,
   createKrakenState,
   hitHead,
   hitTentacle,
@@ -30,7 +29,7 @@ function killGuard(state: KrakenState, now: number): KrakenState {
 }
 
 function closeWindow(state: KrakenState): KrakenState {
-  return tick(state, state.windowEndsAt);
+  return tick(state, state.windowEndsAt).state;
 }
 
 describe('createKrakenState', () => {
@@ -87,8 +86,10 @@ describe('hitHead', () => {
   it('damages the head only during a window', () => {
     const state = killGuard(createKrakenState(def), 1000);
     const result = hitHead(state, 75, 1200);
+    const expired = hitHead(state, 75, state.windowEndsAt);
 
     expect(result.hp).toBe(def.hp - 75);
+    expect(expired.hp).toBe(def.hp);
     expect(state.hp).toBe(def.hp);
   });
 
@@ -111,9 +112,20 @@ describe('hitHead', () => {
 });
 
 describe('tick', () => {
+  it('fires one bubble and advances past every missed interval', () => {
+    const state = createKrakenState(def);
+    const now = def.bubble.intervalMs * 3 + 5;
+    const result = tick(state, now);
+
+    expect(result).toMatchObject({
+      effects: { fireBubble: true },
+      state: { nextBubbleAt: def.bubble.intervalMs * 4 },
+    });
+  });
+
   it('promotes the next alive tentacle when a window expires', () => {
     const window = killGuard(createKrakenState(def), 1000);
-    const guarded = tick(window, window.windowEndsAt);
+    const guarded = tick(window, window.windowEndsAt).state;
 
     expect(guarded).toMatchObject({ phase: 'guarded', activeGuard: 1, windowEndsAt: 0 });
     expect(guarded.tentacles[0].alive).toBe(false);
@@ -121,7 +133,7 @@ describe('tick', () => {
 
   it('regrows due tentacles at full health', () => {
     const window = killGuard(createKrakenState(def), 1000);
-    const result = tick(window, 7000);
+    const result = tick(window, 7000).state;
 
     expect(result.tentacles[0]).toEqual({ alive: true, regrowAt: null, hp: result.tentacleMaxHp });
   });
@@ -131,7 +143,7 @@ describe('tick', () => {
     state = killGuard(closeWindow(state), 2500);
     state = killGuard(closeWindow(state), 5000);
 
-    const waiting = tick(state, 7500);
+    const waiting = tick(state, 7500).state;
     expect(waiting).toMatchObject({ phase: 'window', activeGuard: null, windowEndsAt: 10_000 });
   });
 
@@ -140,19 +152,34 @@ describe('tick', () => {
     state = killGuard(closeWindow(state), 2500);
     state = killGuard(closeWindow(state), 5000);
 
-    const guarded = tick(state, 10_000);
+    const guarded = tick(state, 10_000).state;
     expect(guarded).toMatchObject({ phase: 'guarded', activeGuard: 0, windowEndsAt: 0 });
+  });
+
+  it('wraps guard rotation from the last tentacle to a regrown first tentacle', () => {
+    let state = killGuard(createKrakenState(def), 0);
+    state = killGuard(closeWindow(state), 2500);
+    state = closeWindow(state);
+    expect(state.activeGuard).toBe(2);
+
+    state = tick(state, 6000).state;
+    expect(state.tentacles[0].alive).toBe(true);
+
+    state = killGuard(state, 6000);
+    state = closeWindow(state);
+
+    expect(state.activeGuard).toBe(0);
   });
 });
 
-describe('bubbleDue', () => {
+describe('bubble effects', () => {
   it('uses the normal cadence and carries the next deadline in state', () => {
     const state = createKrakenState(def);
     const advanced = tick(state, def.bubble.intervalMs);
 
-    expect(bubbleDue(state, def.bubble.intervalMs - 1)).toBe(false);
-    expect(bubbleDue(state, def.bubble.intervalMs)).toBe(true);
-    expect(advanced.nextBubbleAt).toBe(def.bubble.intervalMs * 2);
+    expect(tick(state, def.bubble.intervalMs - 1).effects.fireBubble).toBe(false);
+    expect(advanced.effects.fireBubble).toBe(true);
+    expect(advanced.state.nextBubbleAt).toBe(def.bubble.intervalMs * 2);
   });
 
   it('pulls the next bubble forward when the kraken enrages', () => {
@@ -160,14 +187,14 @@ describe('bubbleDue', () => {
     const enraged = hitHead(window, def.hp / 2, 200);
 
     expect(enraged.nextBubbleAt).toBe(200 + def.bubble.enragedIntervalMs);
-    expect(bubbleDue(enraged, 200 + def.bubble.enragedIntervalMs)).toBe(true);
+    expect(tick(enraged, 200 + def.bubble.enragedIntervalMs).effects.fireBubble).toBe(true);
   });
 
   it('does not fire after death', () => {
     const window = killGuard(createKrakenState(def), 100);
     const dead = hitHead(window, def.hp, 200);
 
-    expect(bubbleDue(dead, Number.MAX_SAFE_INTEGER)).toBe(false);
+    expect(tick(dead, Number.MAX_SAFE_INTEGER).effects.fireBubble).toBe(false);
     expect(isDead({ ...dead, phase: 'window' })).toBe(true);
   });
 });
