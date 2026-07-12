@@ -288,6 +288,11 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
     this.enrageApplied = true;
     this.setTexture(Assets.KRAKEN_HEAD_ENRAGED);
     this.play(LakeAnims.KRAKEN_ENRAGED, true);
+    // Swing the head light from its calm cyan to an angry red-orange. Light2D
+    // multiplies the diffuse texture, so the resting cyan light was desaturating
+    // the baked red eyes into muddy amber — recoloring it here makes the enraged
+    // "red-eyed and mad" cue actually read on WebGL (a no-op on Canvas: null light).
+    this.headLight?.setColor(0xff4422).setIntensity(1.1);
     SynthAudio.roar();
     this.juice.shake(0.008, 500);
     this.juice.zoomPunch(0.08, 300);
