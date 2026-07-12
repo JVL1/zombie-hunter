@@ -141,6 +141,8 @@ export const WATER = {
   maxSinkVelocity: 120,
   torpedoSpeed: 420,       // dash speed underwater (land dash stays PLAYER.dashSpeed)
   exitImpulse: -120,       // extra pop when crossing the surface upward
+  buoyancyVelocity: 14,    // peak ±velocity of a submerged pickup's gentle bob
+  buoyancyPeriodMs: 1600,  // one full bob cycle (symmetric — zero net drift)
 } as const;
 
 // Zombie Fish — small no-gravity pack darter (Level 4). Wanders near its school

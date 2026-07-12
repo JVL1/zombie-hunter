@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Assets, OrbTextures } from '../assets';
-import { POWERUPS, PowerUpType } from '../config';
+import { POWERUPS, PowerUpType, WATER } from '../config';
 import { GameState } from '../core/GameState';
 import { SynthAudio } from '../core/SynthAudio';
 import { floatText, lit } from '../fx/Effects';
@@ -14,6 +14,7 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
   powerUp?: PowerUpType;
   private magnetRange: number;
   private floatTween?: Phaser.Tweens.Tween;
+  private buoyant = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number, kind: Exclude<PickupKind, 'orb'>);
   constructor(scene: Phaser.Scene, x: number, y: number, kind: 'orb', powerUp: PowerUpType);
@@ -103,20 +104,32 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
   floatInWater() {
     const body = this.body as Phaser.Physics.Arcade.Body | null;
     if (!body) return;
+    this.buoyant = true;
     body.setAllowGravity(false);
     this.setBounce(0);
-    this.setVelocity(0, 0);
-    this.floatTween = this.scene.tweens.add({
-      targets: body.velocity,
-      y: { from: -14, to: 14 },
-      duration: 1600,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
+    this.startBob();
     this.once('destroy', () => {
       this.floatTween?.stop();
       this.floatTween = undefined;
+    });
+  }
+
+  // Gentle in-place bob: oscillate the body's velocity on a symmetric sine yoyo
+  // (a direct y-tween is clobbered by the dynamic body each step). Zero net drift.
+  // Re-callable — the magnet stops the bob while homing; if the player then leaves
+  // range before collecting, we restart it so the pickup never drifts off.
+  private startBob() {
+    const body = this.body as Phaser.Physics.Arcade.Body | null;
+    if (!body) return;
+    this.setVelocity(0, 0);
+    this.floatTween?.stop();
+    this.floatTween = this.scene.tweens.add({
+      targets: body.velocity,
+      y: { from: -WATER.buoyancyVelocity, to: WATER.buoyancyVelocity },
+      duration: WATER.buoyancyPeriodMs,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
     });
   }
 
@@ -134,6 +147,11 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
       const body = this.body as Phaser.Physics.Arcade.Body;
       body.setAllowGravity(false);
       this.setVelocity(Math.cos(angle) * 320, Math.sin(angle) * 320);
+    } else if (this.buoyant && !this.floatTween) {
+      // Homed toward the player but they left before collecting — the retained
+      // 320px/s velocity (gravity off) would carry this pickup off underwater.
+      // Re-settle it in place and resume the bob so it stays reachable.
+      this.startBob();
     }
   }
 
