@@ -88,6 +88,15 @@ export const Assets = {
   P_SMOKE: 'p-smoke',
   P_SPEEDLINE: 'p-speedline',
 
+  // Zombified Lake (Level 4) — baked parallax + generated wreck tiles
+  LAKE_NIGHT_FAR: 'lake-night-far',
+  LAKE_NIGHT_MID: 'lake-night-mid',
+  LAKE_NIGHT_NEAR: 'lake-night-near',
+  LAKE_GROUND_TOP: 'gen-lake-ground-top',
+  LAKE_GROUND_FILL: 'gen-lake-ground-fill',
+  LAKE_PLATFORM: 'gen-lake-platform',
+  LAKE_STONE: 'gen-lake-stone',
+
   // Shop (between-levels hub) — generated props + HUD consumable icons
   SHOP_ANVIL: 'gen-shop-anvil',
   SHOP_SHACK: 'gen-shop-shack',

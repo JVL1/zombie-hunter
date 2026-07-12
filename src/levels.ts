@@ -246,7 +246,7 @@ const levelThree: LevelDef = {
   levelNumber: 3,
   name: 'THE ABANDONED RAILROAD',
   victorySubtitle: 'You stopped the zombie train',
-  nextSceneKey: 'MainMenu', // flipped to 'Level4' once Level 4 is built
+  nextSceneKey: 'Level4',
   keyIndex: 2,
   worldWidth: 3600,
   playerSpawnX: 100,
@@ -314,7 +314,100 @@ const levelThree: LevelDef = {
   arenaLeft: 3000,
 };
 
-export const LEVELS: LevelDef[] = [levelOne, levelTwo, levelThree];
+const levelFour: LevelDef = {
+  sceneKey: 'Level4',
+  levelNumber: 4,
+  name: 'THE ZOMBIFIED LAKE',
+  victorySubtitle: 'The Sunken Beast sinks for good',
+  nextSceneKey: 'MainMenu',
+  keyIndex: 3,
+  worldWidth: 3400,
+  playerSpawnX: 100,
+  ambientColor: 0x14202e,
+  parallax: [
+    { key: Assets.LAKE_NIGHT_FAR, factor: 0.12 },
+    { key: Assets.LAKE_NIGHT_MID, factor: 0.3 },
+    { key: Assets.LAKE_NIGHT_NEAR, factor: 0.55 },
+  ],
+  textures: {
+    groundTop: Assets.LAKE_GROUND_TOP,
+    groundFill: Assets.LAKE_GROUND_FILL,
+    platform: Assets.LAKE_PLATFORM,
+    stone: Assets.LAKE_STONE,
+  },
+  // Broken hulls and stepped debris form wreck bands through the swim route.
+  platforms: [
+    [650, 360, 5],
+    [1100, 260, 6],
+    [1600, 390, 5],
+    [2100, 300, 6],
+    [2550, 380, 4],
+    [3000, 340, 5],
+  ],
+  stairs: [
+    [850, 408, 4, 45, 48],
+    [1800, 410, 4, 40, 50],
+    [2740, 408, 4, 42, 48],
+  ],
+  // Drowned zombies and power monsters hold their depth instead of resting
+  // on the lakebed, so every Level 4 spawn supplies an explicit swim y.
+  zombieSpawns: [
+    { x: 520, y: 220, variant: 'drowned' },
+    { x: 760, y: 300, variant: 'drowned' },
+    { x: 980, y: 190, variant: 'drowned' },
+    { x: 1320, y: 340, variant: 'drowned' },
+    { x: 1450, y: 330, variant: 'crystal' },
+    { x: 1500, y: 210, variant: 'drowned' },
+    { x: 1850, y: 220, variant: 'drowned' },
+    { x: 2050, y: 400, variant: 'drowned' },
+    { x: 2350, y: 220, variant: 'drowned' },
+    { x: 2380, y: 350, variant: 'titan' },
+    { x: 2500, y: 300, variant: 'drowned' },
+    { x: 2750, y: 200, variant: 'drowned' },
+  ],
+  boss: {
+    kind: 'kraken',
+    name: 'THE SUNKEN BEAST',
+    hp: 400,
+    scale: 2.0,
+    contactDamage: 14,
+    tentacles: 3,
+    regrowMs: 6000,
+    headWindowMs: 2500,
+    bubble: { speed: 160, intervalMs: 1800, enragedIntervalMs: 1100, damage: 12 },
+    enragedSpreadCount: 3,
+  },
+  water: {
+    surfaceY: 120,
+    vents: [
+      { x: 400, topY: 440, width: 56 },
+      { x: 900, topY: 430, width: 64 },
+      { x: 1450, topY: 442, width: 56 },
+      { x: 2200, topY: 438, width: 64 },
+      { x: 2920, topY: 444, width: 60 },
+      { x: 3220, topY: 436, width: 72 },
+    ],
+    scuba: { x: 2010, y: 300 },
+    fishSchools: [
+      { x: 900, y: 200, count: 6 },
+      { x: 1400, y: 250, count: 8 },
+      { x: 2250, y: 200, count: 7 },
+      { x: 2700, y: 260, count: 5 },
+    ],
+    eels: [
+      { x: 1220, y: 210 },
+      { x: 1980, y: 270 },
+      { x: 2040, y: 330 },
+      { x: 2620, y: 330 },
+      { x: 3100, y: 200 },
+    ],
+  },
+  bossSpawnX: 3260,
+  triggerX: 3050,
+  arenaLeft: 2860,
+};
+
+export const LEVELS: LevelDef[] = [levelOne, levelTwo, levelThree, levelFour];
 
 export function levelByNumber(n: number): LevelDef {
   if (!Number.isFinite(n)) n = 1;

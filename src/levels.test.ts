@@ -29,6 +29,55 @@ function overlaps(a: Rect, b: Rect): boolean {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
+function centeredRect(x: number, y: number, width: number, height = width): Rect {
+  return {
+    left: x - width / 2,
+    right: x + width / 2,
+    top: y - height / 2,
+    bottom: y + height / 2,
+  };
+}
+
+function floatingBodyRect(spawn: {
+  x: number;
+  y: number;
+  variant: keyof typeof ZOMBIE.variants;
+}): Rect {
+  const v = ZOMBIE.variants[spawn.variant];
+  return centeredRect(
+    spawn.x,
+    spawn.y,
+    (v.base === 'urban' ? 40 : 32) * v.scale,
+    (v.base === 'urban' ? 80 : 64) * v.scale
+  );
+}
+
+function platformRects(def: (typeof LEVELS)[number]): Rect[] {
+  return def.platforms.flatMap(([x, y, count]) =>
+    Array.from({ length: count }, (_, i) => ({
+      left: x + i * 32,
+      right: x + i * 32 + 32,
+      top: y - 8,
+      bottom: y + 8,
+    }))
+  );
+}
+
+function stairRects(def: (typeof LEVELS)[number]): Rect[] {
+  return def.stairs.flatMap(([startX, baseY, steps, stepH, stepOff]) =>
+    Array.from({ length: steps }, (_, i) => {
+      const x = startX + i * stepOff;
+      const y = baseY - i * stepH;
+      return {
+        left: x - 18,
+        right: x + 18,
+        top: y - 7,
+        bottom: y + 7,
+      };
+    })
+  );
+}
+
 describe('level registry integrity', () => {
   it('level numbers and key indexes are sequential from 1 / 0', () => {
     LEVELS.forEach((def, i) => {
@@ -67,8 +116,13 @@ describe('level registry integrity', () => {
         expect(s.x).toBeGreaterThan(0);
         expect(s.x).toBeLessThan(def.worldWidth - 100);
         if (s.y !== undefined) {
-          expect(s.y).toBeGreaterThan(100);
-          expect(s.y).toBeLessThan(WORLD.groundY - 60);
+          if (def.water) {
+            expect(s.y).toBeGreaterThan(def.water.surfaceY);
+            expect(s.y).toBeLessThan(WORLD.groundY);
+          } else {
+            expect(s.y).toBeGreaterThan(100);
+            expect(s.y).toBeLessThan(WORLD.groundY - 60);
+          }
         }
       }
     }
@@ -95,36 +149,23 @@ describe('level registry integrity', () => {
     }
   });
 
-  it('power-monster ground spawns do not overlap stair stones or platform bands', () => {
+  it('power-monster rest positions do not overlap stair stones or platform bands', () => {
     for (const def of LEVELS) {
-      const platformRects = def.platforms.flatMap(([x, y, count]) =>
-        Array.from({ length: count }, (_, i) => ({
-          left: x + i * 32,
-          right: x + i * 32 + 32,
-          top: y - 8,
-          bottom: y + 8,
-        }))
-      );
-      const stairRects = def.stairs.flatMap(([startX, baseY, steps, stepH, stepOff]) =>
-        Array.from({ length: steps }, (_, i) => {
-          const x = startX + i * stepOff;
-          const y = baseY - i * stepH;
-          return {
-            left: x - 18,
-            right: x + 18,
-            top: y - 7,
-            bottom: y + 7,
-          };
-        })
-      );
+      const solids = [...platformRects(def), ...stairRects(def)];
 
       // Scoped to power monsters (this epic's new spawns): several legacy
       // spawns graze solids by 1-4px at rest, which Arcade separation has
       // always resolved benignly — widening would flag tuned, working data.
       for (const spawn of def.zombieSpawns) {
-        if (!ZOMBIE.variants[spawn.variant].powerUp || spawn.y !== undefined) continue;
-        const rect = restingBodyRect(spawn);
-        for (const solid of [...platformRects, ...stairRects]) {
+        if (!ZOMBIE.variants[spawn.variant].powerUp) continue;
+        let rect: Rect;
+        if (def.water && spawn.y !== undefined) {
+          rect = floatingBodyRect({ ...spawn, y: spawn.y });
+        } else {
+          if (spawn.y !== undefined) continue;
+          rect = restingBodyRect(spawn);
+        }
+        for (const solid of solids) {
           expect(
             overlaps(rect, solid),
             `L${def.levelNumber} ${spawn.variant}@${spawn.x} body overlaps solid at ${solid.left}-${solid.right}, ${solid.top}-${solid.bottom}`
@@ -173,8 +214,65 @@ describe('level registry integrity', () => {
         expect(b.tentacles).toBeGreaterThanOrEqual(2);
         expect(b.tentacles).toBeLessThanOrEqual(3);
         expect(b.regrowMs).toBeGreaterThan(b.headWindowMs);
+        expect(b.headWindowMs).toBeGreaterThan(0);
         expect(b.bubble.speed).toBeGreaterThan(0);
+        expect(b.bubble.enragedIntervalMs).toBeLessThanOrEqual(b.bubble.intervalMs);
         expect(b.enragedSpreadCount).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+});
+
+describe('water levels', () => {
+  const waterLevels = LEVELS.filter((def) => def.water !== undefined);
+
+  it('includes at least one water level with enough surface air headroom', () => {
+    expect(waterLevels.length).toBeGreaterThan(0);
+    for (const def of waterLevels) {
+      expect(def.water!.surfaceY).toBeGreaterThanOrEqual(90);
+    }
+  });
+
+  it('keeps vents submerged, in bounds, and supplies the locked boss arena', () => {
+    for (const def of waterLevels) {
+      const water = def.water!;
+      for (const vent of water.vents) {
+        expect(vent.x).toBeGreaterThan(0);
+        expect(vent.x).toBeLessThan(def.worldWidth);
+        expect(vent.topY).toBeGreaterThan(water.surfaceY);
+        expect(vent.width).toBeGreaterThan(0);
+      }
+      expect(water.vents.filter((vent) => vent.x >= def.arenaLeft).length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('keeps scuba submerged, in bounds, and clear of wreck solids', () => {
+    for (const def of waterLevels) {
+      const water = def.water!;
+      expect(water.scuba.x).toBeGreaterThan(0);
+      expect(water.scuba.x).toBeLessThan(def.worldWidth);
+      expect(water.scuba.y).toBeGreaterThan(water.surfaceY);
+      expect(water.scuba.y).toBeLessThan(WORLD.groundY);
+      const scubaRect = centeredRect(water.scuba.x, water.scuba.y, 24);
+      for (const solid of [...platformRects(def), ...stairRects(def)]) {
+        expect(overlaps(scubaRect, solid)).toBe(false);
+      }
+    }
+  });
+
+  it('keeps fish schools and eels submerged, in bounds, and clear of wreck solids', () => {
+    for (const def of waterLevels) {
+      const water = def.water!;
+      const solids = [...platformRects(def), ...stairRects(def)];
+      for (const creature of [...water.fishSchools, ...water.eels]) {
+        expect(creature.x).toBeGreaterThan(0);
+        expect(creature.x).toBeLessThan(def.worldWidth);
+        expect(creature.y).toBeGreaterThan(water.surfaceY);
+        expect(creature.y).toBeLessThan(WORLD.groundY);
+        const creatureRect = centeredRect(creature.x, creature.y, 20);
+        for (const solid of solids) {
+          expect(overlaps(creatureRect, solid)).toBe(false);
+        }
       }
     }
   });
