@@ -149,6 +149,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (wasInWater && !this._inWater && body.velocity.y < 0) {
       this.setVelocityY(body.velocity.y + WATER.exitImpulse);
     }
+    // A slam started on land and carried into the water ends on entry: there is
+    // no slam underwater, and its fast-fall would otherwise punch through the
+    // buoyancy sink clamp and rocket the player to the lakebed.
+    if (!wasInWater && this._inWater && this.slamHitbox) {
+      this.endSlam();
+    }
 
     // --- Landing ---
     if (grounded && !this.wasGrounded) {
