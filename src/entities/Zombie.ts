@@ -254,6 +254,15 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
     this.play(Math.abs(body.velocity.x) > 5 ? this.anims_.walk : this.anims_.idle, true);
   }
 
+  // Swim variants move in 2D, so the walk/idle decision uses total speed — a
+  // straight-up/down chase has near-zero velocity.x and would otherwise freeze
+  // the swimmer into its idle pose while it visibly moves toward the player.
+  private updateSwimAnim(body: Phaser.Physics.Arcade.Body) {
+    if (this.anims.currentAnim?.key === this.anims_.hurt && this.anims.isPlaying) return;
+    const moving = Math.hypot(body.velocity.x, body.velocity.y) > 5;
+    this.play(moving ? this.anims_.walk : this.anims_.idle, true);
+  }
+
   private tryFailedJump(time: number) {
     if (time - this.lastJumpAttempt < ZOMBIE.jumpFailIntervalMs) return;
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -319,7 +328,7 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
 
     if (!this.target) {
       this.swimPatrol(time, delta);
-      this.updateWalkAnim(body);
+      this.updateSwimAnim(body);
       return;
     }
 
@@ -330,7 +339,7 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
     if (!aggro) {
       this.state_ = ZombieState.PATROL;
       this.swimPatrol(time, delta);
-      this.updateWalkAnim(body);
+      this.updateSwimAnim(body);
       return;
     }
 
@@ -362,7 +371,7 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
       const len = Math.hypot(dx, dy) || 1;
       this.setVelocity((dx / len) * this.vdef.chaseSpeed, (dy / len) * this.vdef.chaseSpeed);
       this.setFlipX(dx < 0);
-      this.updateWalkAnim(body);
+      this.updateSwimAnim(body);
     }
   }
 
