@@ -46,6 +46,7 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
   private bodiesCache: Phaser.Physics.Arcade.Body[] = [];
 
   private bubbles: Phaser.Physics.Arcade.Group;
+  private bubbleOverlap: Phaser.Physics.Arcade.Collider | null = null;
   private headLight: Phaser.GameObjects.Light | null = null;
 
   private risen = false; // dormancy: no ticking / no contact until triggerRise
@@ -117,12 +118,21 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
   // aim bubbles and to wire bubble->player contact damage.
   setTarget(target: Player) {
     this.target = target;
-    this.scene.physics.add.overlap(this.bubbles, target, (bubbleObj, playerObj) => {
-      const bubble = bubbleObj as Phaser.Physics.Arcade.Sprite;
-      if (!bubble.active) return;
-      (playerObj as Player).takeDamage(this.def.bubble.damage, bubble.x, 'projectile');
-      this.killBubble(bubble);
-    });
+    // Tear down any prior overlap so a repeat setTarget can't stack colliders
+    // (which would double bubble damage) or leak. The collider is stored so
+    // destroy() can remove it — symmetric with the attack-hitbox teardown.
+    this.bubbleOverlap?.destroy();
+    this.bubbleOverlap = this.scene.physics.add.overlap(
+      this.bubbles,
+      target,
+      (bubbleObj, playerObj) => {
+        if (this.isDead()) return; // a dead kraken's in-flight bubbles stop hurting
+        const bubble = bubbleObj as Phaser.Physics.Arcade.Sprite;
+        if (!bubble.active) return;
+        (playerObj as Player).takeDamage(this.def.bubble.damage, bubble.x, 'projectile');
+        this.killBubble(bubble);
+      }
+    );
   }
 
   // Task 15 must call setFrozen(true) when the boss cinematic begins and
@@ -227,6 +237,10 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
 
       // Head: only in the open window, and only if the swing isn't also touching
       // the active guard (tentacle wins the tie regardless of callback order).
+      // Redundant defense: the core invariant is activeGuard !== null iff
+      // phase === 'guarded', so whenever guardIdx !== null the phase gate below
+      // already blocks the head. Kept so a future core change can't silently
+      // open a head-while-guarded path.
       if (target === this) {
         if (
           guardIdx !== null &&
@@ -386,7 +400,10 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
   }
 
   override destroy(fromScene?: boolean) {
+    this.bubbleOverlap?.destroy(); // drop the collider before the group it points at
+    this.bubbleOverlap = null;
     if (this.scene) {
+      this.scene.tweens.killTweensOf([this, ...this.tentacles]);
       if (this.headLight) this.scene.lights.removeLight(this.headLight);
       this.headLight = null;
     }
