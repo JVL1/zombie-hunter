@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Assets } from '../assets';
-import { BOSS, GAME_H, GAME_W, SHOP, WORLD, ZOMBIE, ZombieVariant } from '../config';
+import { BOSS, GAME_H, GAME_W, POWERUPS, SHOP, WORLD, ZOMBIE, ZombieVariant } from '../config';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
 import { Juice } from '../core/Juice';
@@ -445,6 +445,10 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.pickups.add(new Pickup(this, z.x, z.y - 20, 'coin'));
     if (z.powerUp) {
       this.pickups.add(new Pickup(this, z.x, z.y - 30, 'orb', z.powerUp));
+      if (z.displayName) {
+        const hex = `#${POWERUPS[z.powerUp].color.toString(16).padStart(6, '0')}`;
+        floatText(this, z.x, z.y - 84, `${z.displayName} DOWN!`, hex, 16);
+      }
     }
     if (Math.random() < ZOMBIE.heartDropChance) {
       this.pickups.add(new Pickup(this, z.x + 14, z.y - 24, 'heart'));

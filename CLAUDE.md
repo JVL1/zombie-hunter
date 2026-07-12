@@ -76,12 +76,12 @@ v2 rebuild: `docs/plans/2026-06-10-rebuild-v2-design.md`
   - **Level 3 — The Abandoned Railroad**: parked-but-"moving" train fought across boxcar roofs (speed lines, smoke, zombie driver gag), giant Zanters that can't fit under the train, DIRT MUTATED ZOMBIE
 - Zombie variants (`disgusting`, `zanter`) as tint/scale/stat entries in `ZOMBIE.variants`; bosses are data-driven `BossDef`s with optional minion summons
 - **Shop hub between levels** (Blacksmith sword tiers + Apocalypse consumables: potions/shields/extra lives), hardened save/load, pure `resolveDamage` pipeline with auto-potion + in-place Extra Life revive, HUD consumable row
-- **Power monsters**: 4 baked-color zombie variants (`vulture`/`rage`/`titan`/`crystal` — Henry will name them properly) spawn across Levels 1-3; kills drop buff orbs granting flight / mega damage / giant mode / invincibility with HUD countdowns; orbs magnetize to the player when the boss triggers
+- **Power monsters**: 4 baked-color zombie variants, named by Henry 2026-07-12 — SKY SCREECHER (`vulture`), FURYFANG (`rage`), TITAN ZOMBIE (`titan`), GEM GUARDIAN (`crystal`); names show as float text on kill. They spawn across Levels 1-3; kills drop buff orbs granting flight / mega damage / giant mode / invincibility with HUD countdowns; orbs magnetize to the player when the boss triggers
 - Advanced graphics: dynamic lighting, postFX, persistent gore decals, baked parallax palettes per level, hit-stop/screen-shake juice
 - Synthesized SFX + ambient music (no audio files)
 - Verified by automated browser playtest: full 3-level progression incl. shop purchases/persistence, power-monster orb→buff→HUD flow, revive edge cases (Canvas) + lights/tints/FX pass (headed WebGL), 100 vitest invariants
 
-**Next milestones:** Henry names the power monsters, Level 4, more difficulty tuning with Henry
+**Next milestones:** Level 4, more difficulty tuning with Henry
 
 ## Gotchas
 

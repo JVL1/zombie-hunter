@@ -88,6 +88,11 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
     return this.vdef.powerUp;
   }
 
+  // Henry's name for this power monster (undefined for regular zombies)
+  get displayName(): string | undefined {
+    return this.vdef.displayName;
+  }
+
   takeDamage(amount: number) {
     if (this.dying) return;
     this.health -= amount;

@@ -32,6 +32,14 @@ describe('power-monster variants', () => {
     }
   });
 
+  it('every power monster has a display name (Henry named them 2026-07-12)', () => {
+    for (const name of POWER_VARIANTS) {
+      const dn = ZOMBIE.variants[name].displayName;
+      expect(dn, `${name} displayName`).toBeDefined();
+      expect(dn!.length, `${name} displayName non-empty`).toBeGreaterThan(0);
+    }
+  });
+
   it('power monsters are elites: hp >= 80', () => {
     for (const name of POWER_VARIANTS) {
       expect(ZOMBIE.variants[name].hp, `${name} hp`).toBeGreaterThanOrEqual(80);
