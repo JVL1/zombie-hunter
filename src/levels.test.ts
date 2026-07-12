@@ -117,8 +117,13 @@ describe('level registry integrity', () => {
         expect(s.x).toBeLessThan(def.worldWidth - 100);
         if (s.y !== undefined) {
           if (def.water) {
+            // Submerged, and the floating body must not embed in the lakebed:
+            // its centered AABB bottom (y + half body height, matching
+            // floatingBodyRect) has to clear WORLD.groundY.
+            const bv = ZOMBIE.variants[s.variant];
+            const halfBody = ((bv.base === 'urban' ? 80 : 64) * bv.scale) / 2;
             expect(s.y).toBeGreaterThan(def.water.surfaceY);
-            expect(s.y).toBeLessThan(WORLD.groundY);
+            expect(s.y + halfBody).toBeLessThanOrEqual(WORLD.groundY);
           } else {
             expect(s.y).toBeGreaterThan(100);
             expect(s.y).toBeLessThan(WORLD.groundY - 60);
