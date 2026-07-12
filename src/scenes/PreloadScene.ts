@@ -3,6 +3,7 @@ import { generateCityTextures } from '../art/city';
 import { generateCommonTextures } from '../art/common';
 import { generateForestTextures } from '../art/forest';
 import { bakeTint } from '../art/helpers';
+import { generateLakeTextures, registerLakeAnims } from '../art/lake';
 import { generatePowerMonsterSheets, registerPowerMonsterAnims } from '../art/powerMonsters';
 import { generateRailTextures } from '../art/rail';
 import { generateShopTextures } from '../art/shop';
@@ -81,6 +82,9 @@ export class PreloadScene extends Phaser.Scene {
     generateCityTextures(this);
     generateForestTextures(this);
     generateRailTextures(this);
+    generateLakeTextures(this);
+    // Lake enemy anims read the just-baked lake sheets — must follow the bake.
+    registerLakeAnims(this);
     generateShopTextures(this);
     // Pre-tint the pale ruin layers into a night palette (runtime tint on
     // TileSprites is WebGL-only; baking it works on the canvas fallback too)
@@ -97,6 +101,11 @@ export class PreloadScene extends Phaser.Scene {
     bakeTint(this, Assets.RUIN_BG_2, Assets.RAIL_NIGHT_FAR, '#5c4a3a');
     bakeTint(this, Assets.RUIN_BG_3, Assets.RAIL_NIGHT_MID, '#43352a');
     bakeTint(this, Assets.RUIN_BG_4, Assets.RAIL_NIGHT_NEAR, '#2e241c');
+    // Level 4: same ruin layers re-baked into a drowned blood-red murk — the
+    // sunken city reads through the bloody lake water
+    bakeTint(this, Assets.RUIN_BG_2, Assets.LAKE_NIGHT_FAR, '#5a2226');
+    bakeTint(this, Assets.RUIN_BG_3, Assets.LAKE_NIGHT_MID, '#401a1e');
+    bakeTint(this, Assets.RUIN_BG_4, Assets.LAKE_NIGHT_NEAR, '#2c1214');
     this.scene.start('MainMenu');
   }
 

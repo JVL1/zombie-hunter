@@ -3,6 +3,7 @@ import * as city from './city';
 import * as common from './common';
 import * as forest from './forest';
 import * as helpers from './helpers';
+import * as lake from './lake';
 import * as powerMonsters from './powerMonsters';
 import * as rail from './rail';
 import * as shop from './shop';
@@ -40,6 +41,12 @@ describe('art module exports', () => {
     ]);
     expect(typeof powerMonsters.generatePowerMonsterSheets).toBe('function');
     expect(typeof powerMonsters.registerPowerMonsterAnims).toBe('function');
+  });
+
+  it('lake exports generateLakeTextures and registerLakeAnims', () => {
+    expect(Object.keys(lake).sort()).toEqual(['generateLakeTextures', 'registerLakeAnims']);
+    expect(typeof lake.generateLakeTextures).toBe('function');
+    expect(typeof lake.registerLakeAnims).toBe('function');
   });
 
   it('shop exports generateShopTextures function', () => {
