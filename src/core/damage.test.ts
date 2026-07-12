@@ -111,6 +111,40 @@ describe('resolveDamage', () => {
     expect(result.state).toEqual(baseState({ health: 10, shieldHits: 0, potions: 1, lives: 1 }));
   });
 
+  it('bypassShield skips shield charges and hits HP directly', () => {
+    const result = resolveDamage(baseState({ health: 80, shieldHits: 2 }), 16, false, true);
+
+    expect(result.outcome).toBe('hurt');
+    expect(result.state).toEqual(baseState({ health: 64, shieldHits: 2 }));
+  });
+
+  it('bypassShield still triggers auto-potion below 30%', () => {
+    const result = resolveDamage(baseState({ health: 40, potions: 1, shieldHits: 2 }), 16, false, true);
+
+    expect(result.outcome).toBe('potioned');
+    expect(result.state).toEqual(baseState({ health: 74, potions: 0, shieldHits: 2 }));
+  });
+
+  it('bypassShield still consumes Extra Life at 0 HP', () => {
+    const result = resolveDamage(baseState({ health: 10, shieldHits: 2, lives: 1 }), 16, false, true);
+
+    expect(result.outcome).toBe('revived');
+    expect(result.state).toEqual(baseState({ health: 100, shieldHits: 2, lives: 0 }));
+  });
+
+  it('default (no flag) behavior is byte-identical to before', () => {
+    const state = baseState({ health: 10, shieldHits: 1, potions: 1, lives: 1 });
+
+    const result = resolveDamage(state, 999, false);
+    const explicitDefaultResult = resolveDamage(state, 999, false, false);
+
+    expect(JSON.stringify(result)).toBe(JSON.stringify(explicitDefaultResult));
+    expect(result).toEqual({
+      state: baseState({ health: 10, shieldHits: 0, potions: 1, lives: 1 }),
+      outcome: 'absorbed',
+    });
+  });
+
   it('clamps potion healing to max health', () => {
     const result = resolveDamage(baseState({ health: 40, maxHealth: 60, potions: 1 }), 25, false);
 
