@@ -21,19 +21,23 @@ export class Level4Scene extends BaseLevelScene {
     super.buildBackdrop();
     const isWebGL = this.sys.renderer.type === Phaser.WEBGL;
 
-    // Blood-red murk: a screen-locked wash tinting the whole view red. The
-    // parallax is already baked blood-red, so this stays subtle — just enough
-    // to read "the water is full of blood." Rectangle fill color renders on
-    // canvas (setTint would not), so the fill is set directly.
+    // Blood-red murk: a screen-locked wash tinting the whole view red. Depth 9
+    // sits it OVER the play field (terrain 3 / entities 4-6 / ambience) so it
+    // actually washes the foreground — at depth 1 it hid behind the already-red
+    // parallax and did nothing. Kept below the intro banner (50) and boss
+    // letterbox/health bar (100+) so those stay legible. Rectangle fill renders
+    // on canvas (setTint would not). Depth + alpha are a feel call — tune with Henry.
     this.add
       .rectangle(0, 0, GAME_W, GAME_H, 0x3a0808, 0.16)
       .setOrigin(0, 0)
       .setScrollFactor(0)
-      .setDepth(1);
+      .setDepth(9);
 
     // Moonlight shafts filtering down from the surface — the level's lamppost
     // analog. Angled, low-alpha, breathing (not flickering like fire), with an
-    // optional WebGL glow at the surface entry point.
+    // optional WebGL glow at the surface entry point. Deliberately NOT lit() —
+    // these are emissive; the Light2D pipeline would darken the beam under the
+    // dark ambient. (Mirrors Level2's moonbeams — the one lit() exception here.)
     for (const x of [500, 1150, 1900, 2650, 3150]) {
       const shaft = this.add
         .image(x, SURFACE_Y, Assets.MOONBEAM)
