@@ -26,6 +26,36 @@
 
 ---
 
+## Execution Progress (updated 2026-07-12)
+
+**Done (12/18), each per-task 3-model reviewed + committed:** Task 0 (worktree), 1 (WATER), 2 (air.ts), 3 (bypassShield), 4 (typed damage + `player-hurt`), 5 (player swim), 6 (BossDef union + WaterDef), 7 (drowned variant), 8 (Level 4 def + water invariants + chain flip), 9 (kraken core), 10 (BossEncounter seam), 14 (lake art pack), 11 (Kraken entity). Suite: **150 vitest green**, `tsc` clean. Branch `feat/level4-zombified-lake`, `f882db5..8af8a19`.
+
+**Remaining:** 12 (fish/eel), 13 (scuba pickup), 15 (scene water system), 16 (HUD air bar), 17 (Level4Scene), 18 (browser playtest). Execution order unchanged: 12 → 13 → 15 → 16 → 17 → 18.
+
+### Contracts established this session (remaining tasks build on these)
+
+- **Kraken core API changed vs the plan text:** `tick(state, now)` now returns `{ state, effects: { fireBubble: boolean } }` (air.ts-style) and there is **no `bubbleDue`** (removed in review). `hitHead` also self-guards `now >= windowEndsAt`. The Kraken entity already consumes the new shape.
+- **Task 14 texture/anim keys** (in `src/assets.ts`): `FISH_SHEET` (3 frames), `EEL_SHEET` (3 frames: 0 coil / 1 telegraph / 2 lunge), `KRAKEN_HEAD` + `KRAKEN_HEAD_ENRAGED` (2 frames each, red eyes baked — swap texture, never `setTint`), `TENTACLE_SEGMENT`, `LASER_BUBBLE`, `VENT_BUBBLE`, `SCUBA_PICKUP`, `SCUBA_HUD_0..4` + `ScubaHudFrames` array. Anims in `LakeAnims`: `fish-swim`, `eel-coil`/`eel-telegraph`/`eel-lunge`, `kraken-idle`/`kraken-enraged`. Task 12 consumes fish/eel; Task 16 consumes `ScubaHudFrames`.
+- **BossEncounter interface** (`src/entities/BossEncounter.ts`): `healthRatio`, `contactBodies: Body[]`, `contactDamage`, `contactDamageActive`, `isDead()`, `triggerRise()`, `update()`, `wireAttackHitbox(hitbox, damage, isSlam, onHit)`, `playDeath(): {x,y}`. Both `Boss` and `Kraken` implement it; `BaseLevelScene` references only the interface + the single `new Boss(...)` construction.
+
+### Task 15 HARD wiring requirements (accumulated from reviews)
+
+- **Branch boss creation on `def.boss.kind`**: `kind === 'kraken'` → `new Kraken(scene, x, y, juice, def.boss)`, else `new Boss(...)`. `Boss`'s constructor **throws** on a non-walker def — so a kraken def MUST NOT reach it. (Closes the Task 6 Codex P2.)
+- **Kraken lifecycle calls** (the entity is dormant/unwired until these run): after construction call `kraken.setTarget(this.player)`; call `kraken.setFrozen(true)` when the boss cinematic begins and `kraken.setFrozen(false)` when it ends — **without the freeze calls, bubbles fire during the rise cinematic.**
+- **Drowned surface-containment:** drowned swimmers currently have no ceiling and can breach the surface / swim out of the water (only world bounds hold them). Wire `surfaceY` to the drowned (symmetric to `Player.setWaterProfile`) and clamp them below it; also give them a de-aggro rest depth so a de-aggroed drowned doesn't strand at the surface. (Flagged in Task 7 review; deferred here by design.)
+- **Underwater death FX:** the scene's `onBossDefeated` stamps ground blood decals at `contactBodies[0].bottom` and anchors gore there — fine for the walker; for the kraken (no ground) verify it reads acceptably underwater, or let the kraken's `playDeath` own its gore and skip the scene's ground decals for kraken.
+
+### Deferred to Task 18 playtest (verify / tune, don't fix blind)
+
+- Drowning applies HP tick with **no knockback and shields NOT consumed** (design ruling).
+- Giant-mode ±7px surface-line drift (Player `deriveWaterState` samples `body.top`/`center.y`, which shift when the giant buff resizes the body) — Titan orb is collectible underwater, so this co-occurs.
+- Swimmer knockback feel — a drowned hit mid-chase re-sets velocity next frame, erasing the knockback impulse; add a hurt-anim velocity gate if hits feel unresponsive.
+- Eel open-jaw clipped ~2px on the lunge frame (widen `EEL_SHEET` frame to 52 or pull `startX` in 2px).
+- L4 stair heights sit ~3px off the wedge-clearance floor (tune with Henry if retuning).
+- `floatingBodyRect` in `levels.test.ts` approximates the swim body centered on `y`; reconcile with the real drowned/fish/eel `setOffset` when Task 12 lands.
+
+---
+
 ## Pre-implementation: workspace setup
 
 ### Task 0: Create worktree and feature branch
