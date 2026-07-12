@@ -44,6 +44,9 @@ export class Eel extends Phaser.Physics.Arcade.Sprite implements Hittable {
     // Hittable body inside the 48×32 frame; leaves the drawn tail slack out.
     body.setSize(40, 20);
     body.setOffset(4, 6);
+    // Clamp the 300px lunge to the world (matches Fish); it always returns to
+    // its anchor afterward, so a bounds stop just prevents an off-world overshoot.
+    this.setCollideWorldBounds(true);
 
     this.play(LakeAnims.EEL_COIL);
   }
@@ -90,7 +93,11 @@ export class Eel extends Phaser.Physics.Arcade.Sprite implements Hittable {
         this.setVelocity(0, 0);
         if (time >= this.eelStateUntil) {
           this.eelState = EelState.LUNGE;
-          this.eelStateUntil = time + ZOMBIE.lungeMs;
+          // Cap the lunge on the time it actually takes to cover EEL.lungeDistance
+          // at EEL.lungeSpeed (+ a small margin), NOT the land zombie's short hop
+          // (ZOMBIE.lungeMs = 350ms would abort at ~133px). The <12px reached-check
+          // still ends it early on arrival; this is just the safety timeout.
+          this.eelStateUntil = time + (EEL.lungeDistance / EEL.lungeSpeed) * 1000 + 100;
           // Capture the strike vector at the moment the windup ends so it stays
           // dodgeable — commit to a fixed 300px lunge along it.
           const tx = this.target?.x ?? this.x;

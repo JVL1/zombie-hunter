@@ -11,15 +11,15 @@ import { Hittable } from '../entities/Hittable';
 import { AttackEvent, Player, SlamEvent } from '../entities/Player';
 import { Pickup } from '../entities/Pickups';
 import { Zombie } from '../entities/Zombie';
+import { dustPuff, floatText, lit, shockwave } from '../fx/Effects';
+import { GoreSystem } from '../fx/Splatter';
+import { LevelDef } from '../levels';
 
 // A self-driving water enemy (Fish/Eel): a Hittable that also updates from the
 // scene clock. The base owns the group + all combat plumbing; Task 15 populates
 // it from def.water. Left empty, it is a no-op on Levels 1-3.
 type WaterEnemy = Phaser.GameObjects.GameObject &
   Hittable & { update(time: number, delta: number): void };
-import { dustPuff, floatText, lit, shockwave } from '../fx/Effects';
-import { GoreSystem } from '../fx/Splatter';
-import { LevelDef } from '../levels';
 
 interface ParallaxLayer {
   sprite: Phaser.GameObjects.TileSprite;
@@ -470,7 +470,6 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   // instanceof branch that fish/eel simply skip.
   private onEnemyKilled(h: Hittable) {
     SynthAudio.splat(true);
-    this.gore.stampDecal(h.x, (h.body as Phaser.Physics.Arcade.Body).bottom, true);
 
     const streak = this.gameState.registerKill(this.time.now);
     if (streak >= 2) {
@@ -479,6 +478,9 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
     this.pickups.add(new Pickup(this, h.x, h.y - 20, 'coin'));
     if (h instanceof Zombie) {
+      // Persistent ground blood decal only for grounded enemies — a floating
+      // fish/eel would otherwise stain open water. (Design call; revisit w/ Henry.)
+      this.gore.stampDecal(h.x, (h.body as Phaser.Physics.Arcade.Body).bottom, true);
       if (h.powerUp) {
         this.pickups.add(new Pickup(this, h.x, h.y - 30, 'orb', h.powerUp));
         if (h.displayName) {

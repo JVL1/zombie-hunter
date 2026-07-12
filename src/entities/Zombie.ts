@@ -87,7 +87,7 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite implements Hittable {
   // canonical mutator — takeHit just wraps it so the scene's shared combat path
   // reads one boolean instead of re-checking isDead().
   get contactDamage(): number {
-    return this.vdef.contactDamage;
+    return this.getDamage();
   }
 
   takeHit(amount: number): boolean {
