@@ -28,9 +28,15 @@
 
 ## Execution Progress (updated 2026-07-12)
 
-**Done (12/18), each per-task 3-model reviewed + committed:** Task 0 (worktree), 1 (WATER), 2 (air.ts), 3 (bypassShield), 4 (typed damage + `player-hurt`), 5 (player swim), 6 (BossDef union + WaterDef), 7 (drowned variant), 8 (Level 4 def + water invariants + chain flip), 9 (kraken core), 10 (BossEncounter seam), 14 (lake art pack), 11 (Kraken entity). Suite: **150 vitest green**, `tsc` clean. Branch `feat/level4-zombified-lake`, `f882db5..8af8a19`.
+**COMPLETE (18/18), each per-task 3-model reviewed + committed.** Phase 1 session (Tasks 0–11, 14): pure cores, player swim, level data, BossEncounter seam, lake art, Kraken entity. Phase 2 session (Tasks 12, 13, 15, 16, 17, 18): fish/eel + Hittable plumbing, scuba pickup + buoyancy, the scene water system (air drive, kraken boss branch, drowned containment), HUD air bar + heartbeat, Level4Scene theme + registration, and the browser playtest.
 
-**Remaining:** 12 (fish/eel), 13 (scuba pickup), 15 (scene water system), 16 (HUD air bar), 17 (Level4Scene), 18 (browser playtest). Execution order unchanged: 12 → 13 → 15 → 16 → 17 → 18.
+**Final state:** **159 vitest green** (150 prior + 9 new water tests), `tsc` clean, `npm run build` clean. All 7 acceptance criteria verified in a live Canvas + headed-WebGL playtest. Branch `feat/level4-zombified-lake`.
+
+**Two bugs found only by live play in Task 18, both fixed + re-verified in-browser:**
+- Kraken bubble→player overlap passed args in `(group, sprite)` order; Phaser invokes the callback as `(sprite, groupMember)`, so `takeDamage` was called on the bubble → crash on every bubble hit, stalling the loop. Fixed to `overlap(player, bubbles, …)` (matches every other overlap in the codebase).
+- Enraged Kraken's baked red eyes were desaturated to amber under Light2D by the resting cyan head light; `applyEnrage()` now swings the head light to red-orange so the cue reads on WebGL.
+
+**Carry-forward tuning notes for Henry (not bugs — playtest feel):** air budget vs. water depth (idle player drowns without surfacing); a contact-caused Extra-Life revive also cracks scuba (a drowning one doesn't — confirm intent); murk wash is a touch heavy / moonlight shafts subtle; drowning red pulse is less dramatic against the red murk; L4 stair heights ~3px off the wedge-clearance floor.
 
 ### Contracts established this session (remaining tasks build on these)
 
