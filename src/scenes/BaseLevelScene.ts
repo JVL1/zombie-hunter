@@ -5,7 +5,8 @@ import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
 import { Juice } from '../core/Juice';
 import { SynthAudio } from '../core/SynthAudio';
-import { Boss, BossState } from '../entities/Boss';
+import { Boss } from '../entities/Boss';
+import type { BossEncounter } from '../entities/BossEncounter';
 import { AttackEvent, Player, SlamEvent } from '../entities/Player';
 import { Pickup } from '../entities/Pickups';
 import { Zombie } from '../entities/Zombie';
@@ -40,7 +41,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   protected pickups!: Phaser.GameObjects.Group;
   private contactCooldown = new Map<Zombie, number>();
 
-  private boss: Boss | null = null;
+  private boss: BossEncounter | null = null;
   private bossTriggered = false;
   private cinematic = false;
   private lastBossHitTime = 0;
@@ -414,23 +415,20 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     big: boolean,
     isSlam: boolean
   ) {
-    if (!this.boss || !this.boss.isVulnerable || this.boss.isDead()) return;
-    const collider = this.physics.add.overlap(hitbox, this.boss, () => {
-      if (!this.boss || this.boss.isDead()) return;
-      const hitSet = hitbox.getData('hitSet') as Set<unknown>;
-      if (hitSet.has(this.boss)) return;
-      hitSet.add(this.boss);
-
-      const died = this.boss.takeDamage(damage);
+    if (!this.boss) return;
+    // The encounter owns the overlap, the per-swing hitSet guard, and its own
+    // takeDamage; it reports each connect back here so the scene keeps owning the
+    // FX, the slam feedback, and onBossDefeated. (The vulnerable/dead early-out
+    // now lives inside wireAttackHitbox.)
+    this.boss.wireAttackHitbox(hitbox, damage, isSlam, (x, y, died) => {
       SynthAudio.splat(big);
-      this.gore.burst(this.boss.x, this.boss.y, big);
+      this.gore.burst(x, y, big);
       if (isSlam) {
         this.player.pogoBounce();
         this.juice.hitStop(60);
       }
       if (died) this.onBossDefeated();
     });
-    hitbox.once('destroy', () => collider.destroy());
   }
 
   private onZombieKilled(z: Zombie) {
@@ -463,27 +461,29 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   // ------------------------------------------------------------------
 
   private createBoss() {
-    this.boss = new Boss(this, this.def.bossSpawnX, WORLD.groundY - 80, this.juice, this.def.boss);
-    this.boss.setTarget(this.player);
-    this.physics.add.collider(this.boss, this.solids);
+    // The one concrete construction site — everything downstream is the interface.
+    const boss = new Boss(this, this.def.bossSpawnX, WORLD.groundY - 80, this.juice, this.def.boss);
+    boss.setTarget(this.player);
+    this.boss = boss;
 
-    this.physics.add.overlap(this.player, this.boss, () => {
-      if (!this.boss || this.boss.getState() !== BossState.FIGHTING || this.boss.isDead()) {
-        // Charging/leaping also hurt
-        if (
-          !this.boss ||
-          (this.boss.getState() !== BossState.CHARGING &&
-            this.boss.getState() !== BossState.LEAPING)
-        ) {
-          return;
+    // Solids collision + player contact damage wire against the encounter's own
+    // body/bodies (walker: one; kraken: head + tentacles). The FIGHTING/CHARGING/
+    // LEAPING gate is now the encounter's contactDamageActive flag.
+    for (const body of boss.contactBodies) {
+      this.physics.add.collider(body.gameObject, this.solids);
+      this.physics.add.overlap(this.player, body.gameObject, (_p, bossObj) => {
+        if (!this.boss || !this.boss.contactDamageActive) return;
+        const now = this.time.now;
+        if (now - this.lastBossHitTime > 1000 && !this.player.isDying) {
+          this.lastBossHitTime = now;
+          this.player.takeDamage(
+            this.boss.contactDamage,
+            (bossObj as Phaser.GameObjects.Sprite).x,
+            'contact'
+          );
         }
-      }
-      const now = this.time.now;
-      if (now - this.lastBossHitTime > 1000 && !this.player.isDying) {
-        this.lastBossHitTime = now;
-        this.player.takeDamage(this.boss.getDamage(), this.boss.x, 'contact');
-      }
-    });
+      });
+    }
   }
 
   private triggerBossEncounter() {
@@ -573,9 +573,13 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
   private onBossDefeated() {
     if (!this.boss) return;
-    const bossX = this.boss.x;
-    const bossY = this.boss.y;
-    const bossBottom = (this.boss.body as Phaser.Physics.Arcade.Body).bottom;
+    // Read the corpse anchor through the interface: the first contact body's
+    // gameObject is the boss sprite (its x/y match the old this.boss.x/y) and its
+    // body.bottom is the ground contact used for the blood decals.
+    const bossSprite = this.boss.contactBodies[0].gameObject as Phaser.GameObjects.Sprite;
+    const bossX = bossSprite.x;
+    const bossY = bossSprite.y;
+    const bossBottom = this.boss.contactBodies[0].bottom;
 
     SynthAudio.roar();
     this.juice.slowMo(900, 0.3);
@@ -589,17 +593,14 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.gore.stampDecal(bossX - 40, bossBottom, true);
     this.gore.stampDecal(bossX + 40, bossBottom, true);
 
-    this.boss.destroyThrone();
+    // Corpse presentation (throne sink + death anim + delayed destroy) lives in
+    // the encounter now; it returns the key-drop spot.
+    const keySpot = this.boss.playDeath();
     this.bossHealthBar?.destroy();
     this.bossHealthBarBg?.destroy();
     this.bossNameText?.destroy();
     this.bossHealthBar = null;
-
-    const corpse = this.boss;
     this.boss = null;
-    corpse.setVelocity(0, 0);
-    corpse.play('urban-dead', true);
-    this.time.delayedCall(1600, () => corpse.destroy());
 
     // Summoned minions pop when their king dies — no stragglers past the fight
     this.zombies
@@ -612,9 +613,9 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       });
     this.contactCooldown.clear();
 
-    // The level key floats down
+    // The level key floats down at the encounter's returned spot (== bossY - 60)
     this.time.delayedCall(800, () => {
-      this.pickups.add(new Pickup(this, bossX, bossY - 60, 'key'));
+      this.pickups.add(new Pickup(this, keySpot.x, keySpot.y, 'key'));
     });
 
     // Boss bounty: a burst of coins around the corpse
@@ -689,7 +690,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     if (this.boss && !this.boss.isDead()) {
       this.boss.update(time, delta);
       if (this.bossHealthBar) {
-        this.bossHealthBar.width = 360 * Math.max(0, this.boss.health / this.boss.maxHealth);
+        this.bossHealthBar.width = 360 * Math.max(0, this.boss.healthRatio);
       }
     }
   }
