@@ -18,30 +18,30 @@ interface BossBase {
 
 export interface WalkerBossDef extends BossBase {
   kind: 'walker';
-  tint?: number;
+  tint?: number; // omit for no tint
   walkSpeed: number;
   enragedWalkSpeed: number;
   attackIntervalMs: number;
   enragedAttackIntervalMs: number;
   throneTexture: string; // Assets key
-  canCharge: boolean;
-  canLeap: boolean;
+  canCharge: boolean; // telegraphed charge into walls
+  canLeap: boolean; // enraged jump-slam + shockwave
   summon?: {
     variant: ZombieVariant;
-    count: number;
+    count: number; // minions per summon (pre-enrage)
     enragedCount: number;
-    maxAlive: number;
-    intervalMs: number;
+    maxAlive: number; // cap on live (non-dying) minions
+    intervalMs: number; // time between summons
   };
 }
 
 export interface KrakenBossDef extends BossBase {
   kind: 'kraken';
-  tentacles: number;
-  regrowMs: number;
-  headWindowMs: number;
+  tentacles: number; // guarding tentacles; kill the active guard to open the head
+  regrowMs: number; // delay before a killed guard tentacle regrows (> headWindowMs)
+  headWindowMs: number; // how long the head stays vulnerable after a guard dies
   bubble: { speed: number; intervalMs: number; enragedIntervalMs: number; damage: number };
-  enragedSpreadCount: number;
+  enragedSpreadCount: number; // aimed bubbles per volley once enraged (>= 3)
 }
 
 export type BossDef = WalkerBossDef | KrakenBossDef;
