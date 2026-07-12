@@ -478,6 +478,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.isInvulnerable,
       isDrowning
     );
+    // Emitted here (before GameState is written below) so 'ignored' i-frame hits
+    // still notify. Listeners get the resolved `outcome`/`source` only — gs.health
+    // /lives are NOT yet updated at emit time, so don't read them in the handler.
     this.scene.events.emit('player-hurt', { outcome, source });
     if (outcome === 'ignored') return; // i-frames/dash: no knockback, no sound
 
