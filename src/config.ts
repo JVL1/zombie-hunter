@@ -124,6 +124,22 @@ export const BUFF = {
   flightDriftGravityFactor: 0.35,
 };
 
+// Underwater movement + breathing (Level 4). Design: docs/plans/2026-07-12-level4-zombified-lake-design.md
+export const WATER = {
+  airMs: 30000,            // full breath (Henry: "about 30 seconds")
+  warnAtMs: 8000,          // remaining air that triggers "YOU NEED TO GO UP TO BREATHE"
+  drownTickMs: 1000,       // cadence of drowning damage at zero air
+  drownTickDamage: 8,
+  refillRatio: 3,          // vents/surface refill 3x faster than drain
+  scubaDurability: 5,      // cracks per hit before shattering
+  surfaceHysteresisPx: 6,  // anti-flicker band at the surface line
+  gravityFactor: 0.25,     // fraction of world gravity while submerged
+  riseVelocity: -180,      // ↑ thrust cap (gentler than flight's)
+  maxSinkVelocity: 120,
+  torpedoSpeed: 420,       // dash speed underwater (land dash stays PLAYER.dashSpeed)
+  exitImpulse: -120,       // extra pop when crossing the surface upward
+} as const;
+
 export const ZOMBIE = {
   aggroRange: 240,
   deaggroRange: 330,

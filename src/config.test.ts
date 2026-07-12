@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONSUMABLES, POWERUPS, SWORDS, ZOMBIE, type PowerUpType } from './config';
+import { CONSUMABLES, POWERUPS, SWORDS, WATER, ZOMBIE, type PowerUpType } from './config';
 import { ZombieAnims } from './assets';
 
 describe('zombie variant table', () => {
@@ -95,5 +95,22 @@ describe('POWERUPS', () => {
       colors.add(powerup.color);
     }
     expect(colors.size).toBe(types.length);
+  });
+});
+
+describe('WATER', () => {
+  it('air lasts longer than the warning threshold', () => {
+    expect(WATER.airMs).toBeGreaterThan(WATER.warnAtMs);
+  });
+  it('drown tick cadence and damage are positive', () => {
+    expect(WATER.drownTickMs).toBeGreaterThan(0);
+    expect(WATER.drownTickDamage).toBeGreaterThan(0);
+  });
+  it('scuba takes 5 hits (Henry ruling)', () => {
+    expect(WATER.scubaDurability).toBe(5);
+  });
+  it('surface hysteresis is a small positive band', () => {
+    expect(WATER.surfaceHysteresisPx).toBeGreaterThan(0);
+    expect(WATER.surfaceHysteresisPx).toBeLessThan(20);
   });
 });
