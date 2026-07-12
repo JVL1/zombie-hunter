@@ -19,6 +19,8 @@ export interface SlamEvent {
   damage: number;
 }
 
+export type DamageSource = 'contact' | 'projectile' | 'drowning';
+
 // The zombie hunter. Modern platformer feel: coyote time, jump buffer,
 // variable jump height, double jump, dash with i-frames, 3-hit sword combo,
 // air slam with pogo bounce.
@@ -460,9 +462,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // NOTE: any future out-of-bounds kill volume (pits, crushers) must route
   // through takeDamage — never call die() directly, or shields/potions/Extra
   // Lives in the resolveDamage pipeline won't fire.
-  takeDamage(amount: number, fromX: number) {
+  takeDamage(amount: number, fromX: number, source: DamageSource = 'contact') {
     if (this.dying) return;
     const gs = this.gameState;
+    const isDrowning = source === 'drowning';
     const { state, outcome } = resolveDamage(
       {
         health: gs.health,
@@ -472,8 +475,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         lives: gs.lives,
       },
       amount,
-      this.isInvulnerable
+      this.isInvulnerable,
+      isDrowning
     );
+    this.scene.events.emit('player-hurt', { outcome, source });
     if (outcome === 'ignored') return; // i-frames/dash: no knockback, no sound
 
     gs.health = state.health;
@@ -490,7 +495,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
-    this.invulnUntil = this.scene.time.now + PLAYER.hurtInvulnMs;
+    if (!isDrowning) {
+      this.invulnUntil = this.scene.time.now + PLAYER.hurtInvulnMs;
+    }
     if (outcome === 'absorbed') {
       SynthAudio.shield();
       flashSprite(this, 0xffd700); // shield gold — no health (red) flash
@@ -499,22 +506,24 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       flashSprite(this, 0xff4444);
     }
 
-    const dir = this.x < fromX ? -1 : 1;
-    this.setVelocity(dir * PLAYER.contactKnockback, -180);
+    if (!isDrowning) {
+      const dir = this.x < fromX ? -1 : 1;
+      this.setVelocity(dir * PLAYER.contactKnockback, -180);
 
-    // Invulnerability blink
-    this.hurtBlinkTween?.stop();
-    this.hurtBlinkTween = this.scene.tweens.add({
-      targets: this,
-      alpha: 0.3,
-      duration: 90,
-      yoyo: true,
-      repeat: Math.floor(PLAYER.hurtInvulnMs / 180),
-      onComplete: () => {
-        this.setAlpha(1);
-        this.hurtBlinkTween = null;
-      },
-    });
+      // Invulnerability blink
+      this.hurtBlinkTween?.stop();
+      this.hurtBlinkTween = this.scene.tweens.add({
+        targets: this,
+        alpha: 0.3,
+        duration: 90,
+        yoyo: true,
+        repeat: Math.floor(PLAYER.hurtInvulnMs / 180),
+        onComplete: () => {
+          this.setAlpha(1);
+          this.hurtBlinkTween = null;
+        },
+      });
+    }
 
     if (outcome === 'potioned') {
       floatText(this.scene, this.x, this.y - 50, 'POTION!', '#ff6688', 14);

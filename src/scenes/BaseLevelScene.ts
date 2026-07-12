@@ -150,7 +150,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       const last = this.contactCooldown.get(z) ?? 0;
       if (now - last > ZOMBIE.contactCooldownMs) {
         this.contactCooldown.set(z, now);
-        this.player.takeDamage(z.getDamage(), z.x);
+        this.player.takeDamage(z.getDamage(), z.x, 'contact');
       }
     });
 
@@ -333,7 +333,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
         Math.abs(this.player.x - x) < BOSS.shockwaveRange &&
         !this.player.isInvulnerable
       ) {
-        this.player.takeDamage(BOSS.shockwaveDamage, x);
+        this.player.takeDamage(BOSS.shockwaveDamage, x, 'contact');
       }
     });
 
@@ -481,7 +481,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       const now = this.time.now;
       if (now - this.lastBossHitTime > 1000 && !this.player.isDying) {
         this.lastBossHitTime = now;
-        this.player.takeDamage(this.boss.getDamage(), this.boss.x);
+        this.player.takeDamage(this.boss.getDamage(), this.boss.x, 'contact');
       }
     });
   }
