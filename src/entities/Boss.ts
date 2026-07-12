@@ -79,10 +79,6 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements BossEncounter 
     this.target = target;
   }
 
-  getState(): BossState {
-    return this.bossState;
-  }
-
   getDamage(): number {
     return this.def.contactDamage;
   }
