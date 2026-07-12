@@ -263,7 +263,15 @@ export class HUDScene extends Phaser.Scene {
   private updateAirHud(time: number) {
     const snap = this.registry.get('airHud') as AirHudSnapshot | undefined;
     if (!snap) {
+      // No snapshot this frame (Levels 1-3, or a future caller that stops
+      // publishing mid-level) — hide the whole air UI so nothing strands with
+      // stale values, and clear any drowning FX.
       if (this.drowning) this.setDrowning(false);
+      this.airPanel.setVisible(false);
+      this.airBarBg.setVisible(false);
+      this.airFill.setVisible(false);
+      this.scubaIcon.setVisible(false);
+      this.airWarnText.setVisible(false);
       return;
     }
 
@@ -297,6 +305,9 @@ export class HUDScene extends Phaser.Scene {
 
   private setDrowning(on: boolean) {
     this.drowning = on;
+    // Never stack overlay tweens — drop any prior one before (re)deciding.
+    this.drownTween?.remove();
+    this.drownTween = undefined;
     if (on) {
       this.drownOverlay.setVisible(true);
       this.drownTween = this.tweens.add({
@@ -307,8 +318,6 @@ export class HUDScene extends Phaser.Scene {
         repeat: -1,
       });
     } else {
-      this.drownTween?.remove();
-      this.drownTween = undefined;
       this.drownOverlay.setVisible(false).setAlpha(0);
     }
   }
