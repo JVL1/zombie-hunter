@@ -57,6 +57,8 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
     this.health = this.maxHealth;
 
     this.setCollideWorldBounds(true);
+    // Swim variants (Level 4) are neutral-buoyancy: no gravity, they hover.
+    if (v.movement === 'swim') (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
     if (v.base === 'urban') {
       this.body!.setSize(40, 80);
       this.body!.setOffset(44, 48);
@@ -154,6 +156,14 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
         );
       }
       this.nextGroanAt = time + 3000 + Math.random() * 4000;
+    }
+
+    // Level 4 swimmers take a completely separate 2D movement path. Everything
+    // below is the grounded land-zombie logic and never runs for them, so land
+    // zombies (movement undefined/'ground') stay bit-identical.
+    if (this.vdef.movement === 'swim') {
+      this.swimUpdate(time, delta);
+      return;
     }
 
     switch (this.state_) {
@@ -265,6 +275,106 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
       this.patrolTimer = 0;
     }
     this.setVelocityX(this.patrolDirection * this.vdef.patrolSpeed);
+    this.setFlipX(this.patrolDirection < 0);
+  }
+
+  // ── Swim movement (Level 4 'drowned') ─────────────────────────────────────
+  // Neutral-buoyancy 2D swimmer: direct-velocity diagonal chase, gentle bob on
+  // patrol, and a dodgeable telegraph burst that fires along the 2D vector to
+  // the player (no ground/`blocked.down` gate — there is no floor underwater).
+  // Reuses the WINDUP/LUNGE/RECOVER states + timings and the shared state fields
+  // (`state_`/`stateUntil`/`nextLungeAt`/`windupTween`) so takeDamage's
+  // windup-interrupt logic still works.
+  private swimUpdate(time: number, delta: number) {
+    const body = this.body as Phaser.Physics.Arcade.Body;
+
+    switch (this.state_) {
+      case ZombieState.WINDUP:
+        this.setVelocity(0, 0);
+        if (time >= this.stateUntil) {
+          this.state_ = ZombieState.LUNGE;
+          this.stateUntil = time + ZOMBIE.lungeMs;
+          // Burst toward the player along the 2D vector captured right now.
+          const tx = this.target?.x ?? this.x;
+          const ty = this.target?.y ?? this.y;
+          const ang = Math.atan2(ty - this.y, tx - this.x);
+          this.setVelocity(Math.cos(ang) * ZOMBIE.lungeSpeed, Math.sin(ang) * ZOMBIE.lungeSpeed);
+          this.setFlipX(tx < this.x);
+          this.play(this.anims_.attack, true);
+        }
+        return;
+      case ZombieState.LUNGE:
+        if (time >= this.stateUntil) {
+          this.state_ = ZombieState.RECOVER;
+          this.stateUntil = time + ZOMBIE.lungeRecoverMs;
+        }
+        return;
+      case ZombieState.RECOVER:
+        // Coast on the leftover burst velocity; no ground zeroing underwater.
+        if (time >= this.stateUntil) this.state_ = ZombieState.CHASE;
+        return;
+      default:
+        break;
+    }
+
+    if (!this.target) {
+      this.swimPatrol(time, delta);
+      this.updateWalkAnim(body);
+      return;
+    }
+
+    const dist = Phaser.Math.Distance.BetweenPoints(this, this.target);
+    const aggro =
+      this.state_ === ZombieState.CHASE ? dist < ZOMBIE.deaggroRange : dist < ZOMBIE.aggroRange;
+
+    if (!aggro) {
+      this.state_ = ZombieState.PATROL;
+      this.swimPatrol(time, delta);
+      this.updateWalkAnim(body);
+      return;
+    }
+
+    this.state_ = ZombieState.CHASE;
+    const dx = this.target.x - this.x;
+    const dy = this.target.y - this.y;
+
+    if (dist < ZOMBIE.lungeRange && time >= this.nextLungeAt) {
+      // Telegraphed dodgeable burst — crouch-flash windup, then a 2D lunge.
+      this.state_ = ZombieState.WINDUP;
+      this.stateUntil = time + ZOMBIE.lungeWindupMs;
+      this.nextLungeAt = time + ZOMBIE.lungeCooldownMs;
+      this.setVelocity(0, 0);
+      this.setFlipX(dx < 0);
+      flashSprite(this, 0xff8866, ZOMBIE.lungeWindupMs - 60, this.vdef.tint);
+      this.windupTween = this.scene.tweens.add({
+        targets: this,
+        scaleY: this.vdef.scale * 0.92,
+        scaleX: this.vdef.scale * 1.06,
+        duration: ZOMBIE.lungeWindupMs - 60,
+        yoyo: true,
+        onComplete: () => {
+          this.windupTween = null;
+          this.setScale(this.vdef.scale);
+        },
+      });
+    } else {
+      // Direct-velocity 2D chase: swim straight at the player, any direction.
+      const len = Math.hypot(dx, dy) || 1;
+      this.setVelocity((dx / len) * this.vdef.chaseSpeed, (dy / len) * this.vdef.chaseSpeed);
+      this.setFlipX(dx < 0);
+      this.updateWalkAnim(body);
+    }
+  }
+
+  private swimPatrol(time: number, delta: number) {
+    this.patrolTimer += delta;
+    if (this.patrolTimer >= 2000) {
+      this.patrolDirection *= -1;
+      this.patrolTimer = 0;
+    }
+    this.setVelocityX(this.patrolDirection * this.vdef.patrolSpeed);
+    // Gentle vertical bob around neutral so it hovers rather than drifting off.
+    this.setVelocityY(Math.sin(time / 500) * 18);
     this.setFlipX(this.patrolDirection < 0);
   }
 

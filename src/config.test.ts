@@ -17,6 +17,13 @@ describe('zombie variant table', () => {
     expect(ZOMBIE.variants.zanter.scale).toBeGreaterThan(1.3);
     expect(ZOMBIE.variants.zanter.hp).toBeGreaterThan(ZOMBIE.variants.urban.hp);
   });
+
+  it('drowned variant swims', () => {
+    expect(ZOMBIE.variants.drowned.movement).toBe('swim');
+    // Land variants must stay grounded — swim behavior is gated on movement==='swim'.
+    expect(ZOMBIE.variants.zombie.movement).not.toBe('swim');
+    expect(ZOMBIE.variants.urban.movement).not.toBe('swim');
+  });
 });
 
 describe('power-monster variants', () => {

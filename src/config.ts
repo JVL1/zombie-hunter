@@ -18,7 +18,8 @@ export type ZombieVariant =
   | 'vulture'
   | 'rage'
   | 'titan'
-  | 'crystal';
+  | 'crystal'
+  | 'drowned';
 
 export interface ZombieVariantDef {
   base: 'zombie' | 'urban'; // which sprite pack + body size to use
@@ -28,6 +29,8 @@ export interface ZombieVariantDef {
   patrolSpeed: number;
   chaseSpeed: number;
   contactDamage: number;
+  // 'swim' = neutral-buoyancy 2D swimmer (Level 4); default/undefined = grounded
+  movement?: 'ground' | 'swim';
   // Power monsters: drop this buff orb on death (Task 14 wires the drop).
   powerUp?: PowerUpType;
   // In-game name shown when a power monster goes down (Henry named them 2026-07-12).
@@ -164,6 +167,9 @@ export const ZOMBIE = {
     rage:    { base: 'zombie', hp: 80,  scale: 1.05, patrolSpeed: 70, chaseSpeed: 125, contactDamage: 12, powerUp: 'megaDamage', displayName: 'FURYFANG',      sheet: 'pm-rage',    animSet: 'pm-rage',    bakeColor: 0xaa2222 },
     titan:   { base: 'urban',  hp: 110, scale: 1.5,  patrolSpeed: 38, chaseSpeed: 65,  contactDamage: 14, powerUp: 'giant',      displayName: 'TITAN ZOMBIE',  sheet: 'pm-titan',   animSet: 'pm-titan',   bakeColor: 0x8a8a7a },
     crystal: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 55, chaseSpeed: 100, contactDamage: 10, powerUp: 'invincible', displayName: 'GEM GUARDIAN',  sheet: 'pm-crystal', animSet: 'pm-crystal', bakeColor: 0x3ad8cc },
+    // Level 4 swimmer: neutral-buoyancy 2D chaser. Runtime tint only (WebGL nicety,
+    // invisible on Canvas); no bake sheet yet — the bake-color decision defers to playtest.
+    drowned: { base: 'zombie', hp: 60, scale: 1.0, patrolSpeed: 40, chaseSpeed: 70, contactDamage: 10, movement: 'swim', tint: 0x4a7a6a },
   } satisfies Record<ZombieVariant, ZombieVariantDef> as Record<ZombieVariant, ZombieVariantDef>,
 };
 
