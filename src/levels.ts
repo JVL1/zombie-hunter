@@ -9,26 +9,49 @@ export interface ZombieSpawn {
   y?: number; // optional explicit spawn height (train roofs); default puts the body bottom 8px above the ground (variant-aware)
 }
 
-export interface BossDef {
-  name: string; // HUD banner text, e.g. 'MUTATED ZOMBIE'
+interface BossBase {
+  name: string; // HUD banner text
   hp: number;
   scale: number;
-  tint?: number; // omit for no tint
+  contactDamage: number;
+}
+
+export interface WalkerBossDef extends BossBase {
+  kind: 'walker';
+  tint?: number;
   walkSpeed: number;
   enragedWalkSpeed: number;
-  contactDamage: number;
   attackIntervalMs: number;
   enragedAttackIntervalMs: number;
   throneTexture: string; // Assets key
-  canCharge: boolean; // telegraphed charge into walls
-  canLeap: boolean; // enraged jump-slam + shockwave
+  canCharge: boolean;
+  canLeap: boolean;
   summon?: {
     variant: ZombieVariant;
-    count: number; // minions per summon (pre-enrage)
+    count: number;
     enragedCount: number;
-    maxAlive: number; // cap on live (non-dying) minions
-    intervalMs: number; // time between summons
+    maxAlive: number;
+    intervalMs: number;
   };
+}
+
+export interface KrakenBossDef extends BossBase {
+  kind: 'kraken';
+  tentacles: number;
+  regrowMs: number;
+  headWindowMs: number;
+  bubble: { speed: number; intervalMs: number; enragedIntervalMs: number; damage: number };
+  enragedSpreadCount: number;
+}
+
+export type BossDef = WalkerBossDef | KrakenBossDef;
+
+export interface WaterDef {
+  surfaceY: number;
+  vents: Array<{ x: number; topY: number; width: number }>;
+  scuba: { x: number; y: number };
+  fishSchools: Array<{ x: number; y: number; count: number }>;
+  eels: Array<{ x: number; y: number }>;
 }
 
 export interface LevelDef {
@@ -52,6 +75,7 @@ export interface LevelDef {
   stairs: Array<[startX: number, baseY: number, steps: number, stepH: number, stepOff: number]>;
   zombieSpawns: ZombieSpawn[];
   boss: BossDef;
+  water?: WaterDef;
   bossSpawnX: number;
   triggerX: number; // player x that starts the boss cinematic
   arenaLeft: number; // world/camera bounds lock during boss fight
@@ -103,6 +127,7 @@ const levelOne: LevelDef = {
     { x: 2300, variant: 'rage' },
   ],
   boss: {
+    kind: 'walker',
     name: 'MUTATED ZOMBIE',
     hp: 230,
     scale: 1.8,
@@ -176,6 +201,7 @@ const levelTwo: LevelDef = {
   // The horde boss IS the pack: the Pack King charges like a brute and keeps
   // summoning disgusting zombies to swarm you — more and faster when enraged.
   boss: {
+    kind: 'walker',
     name: 'ZOMBIE PACK KING',
     hp: 300,
     scale: 1.7,
@@ -269,6 +295,7 @@ const levelThree: LevelDef = {
     { x: 2760, variant: 'rage' },
   ],
   boss: {
+    kind: 'walker',
     name: 'DIRT MUTATED ZOMBIE',
     hp: 340,
     scale: 1.85,

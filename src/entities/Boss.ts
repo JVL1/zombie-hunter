@@ -4,7 +4,7 @@ import { BOSS } from '../config';
 import { Juice } from '../core/Juice';
 import { SynthAudio } from '../core/SynthAudio';
 import { dustPuff, flashSprite, knockback, lit, shockwave } from '../fx/Effects';
-import type { BossDef } from '../levels';
+import type { BossDef, WalkerBossDef } from '../levels';
 
 export enum BossState {
   SITTING,
@@ -35,11 +35,14 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
   private juice: Juice;
   private anims_ = ZombieAnims.urban;
   private chargeDir = 1;
-  private def: BossDef;
+  private def: WalkerBossDef;
   private nextSummonAt = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, juice: Juice, def: BossDef) {
     super(scene, x, y, Assets.URBAN_IDLE, 0);
+    if (def.kind !== 'walker') {
+      throw new Error(`Boss expects a walker boss def, got kind='${def.kind}'`);
+    }
     this.juice = juice;
     this.def = def;
 

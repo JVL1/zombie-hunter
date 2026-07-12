@@ -157,16 +157,24 @@ describe('level registry integrity', () => {
       const b = def.boss;
       expect(b.hp).toBeGreaterThan(0);
       expect(b.scale).toBeGreaterThan(0);
-      expect(b.enragedWalkSpeed).toBeGreaterThanOrEqual(b.walkSpeed);
-      expect(b.enragedAttackIntervalMs).toBeLessThanOrEqual(b.attackIntervalMs);
-      // A boss with no attacks at all would just walk at you forever
-      expect(b.canCharge || b.canLeap || b.summon !== undefined).toBe(true);
-      if (b.summon) {
-        expect(b.summon.count).toBeGreaterThan(0);
-        expect(b.summon.enragedCount).toBeGreaterThanOrEqual(b.summon.count);
-        expect(b.summon.maxAlive).toBeGreaterThanOrEqual(b.summon.enragedCount);
-        // Summons must be breathers between waves, not a continuous flood
-        expect(b.summon.intervalMs).toBeGreaterThan(b.attackIntervalMs);
+      if (b.kind === 'walker') {
+        expect(b.enragedWalkSpeed).toBeGreaterThanOrEqual(b.walkSpeed);
+        expect(b.enragedAttackIntervalMs).toBeLessThanOrEqual(b.attackIntervalMs);
+        // A boss with no attacks at all would just walk at you forever
+        expect(b.canCharge || b.canLeap || b.summon !== undefined).toBe(true);
+        if (b.summon) {
+          expect(b.summon.count).toBeGreaterThan(0);
+          expect(b.summon.enragedCount).toBeGreaterThanOrEqual(b.summon.count);
+          expect(b.summon.maxAlive).toBeGreaterThanOrEqual(b.summon.enragedCount);
+          // Summons must be breathers between waves, not a continuous flood
+          expect(b.summon.intervalMs).toBeGreaterThan(b.attackIntervalMs);
+        }
+      } else if (b.kind === 'kraken') {
+        expect(b.tentacles).toBeGreaterThanOrEqual(2);
+        expect(b.tentacles).toBeLessThanOrEqual(3);
+        expect(b.regrowMs).toBeGreaterThan(b.headWindowMs);
+        expect(b.bubble.speed).toBeGreaterThan(0);
+        expect(b.enragedSpreadCount).toBeGreaterThanOrEqual(3);
       }
     }
   });
