@@ -26,7 +26,7 @@ Rebuild design doc: `docs/plans/2026-06-10-rebuild-v2-design.md`. 960×540 (16:9
 
 ### Scene Flow
 ```
-PreloadScene → MainMenuScene → Level1 → Victory → Shop → Level2 → Victory → Shop → Level3 (+ HUD overlay) → Victory/GameOver → MainMenu/retry
+PreloadScene → MainMenuScene → Level1 → Victory → Shop → Level2 → Victory → Shop → Level3 → Victory → Shop → Level4 (+ HUD overlay) → Victory/GameOver → MainMenu/retry
 ```
 Victory routes through `ShopScene` whenever the level's `nextSceneKey` isn't `'MainMenu'` (the final built level goes straight back to the menu); the shop's HEAD OUT door starts the next level. GameOver retries `GameState.currentLevel` (buffs cleared, consumables retained). MainMenu number keys 1-N replay any level up to `maxUnlockedLevel` — replays still route through the shop.
 
@@ -70,24 +70,27 @@ v2 rebuild: `docs/plans/2026-06-10-rebuild-v2-design.md`
 
 ## Implementation Status
 
-- Levels 1-3 fully playable end-to-end with Victory chaining, level-aware GameOver retry, and MainMenu replay (number keys):
+- Levels 1-4 fully playable end-to-end with Victory chaining, level-aware GameOver retry, and MainMenu replay (number keys):
   - **Level 1 — The Abandoned City**: 8 zombies, stepping stones, fire barrels, rain/lightning, MUTATED ZOMBIE (tuned with Henry 2026-06-11)
   - **Level 2 — The Broken Down Forest**: horde packs of disgusting zombies, fireflies/moonbeams/dead trees, ZOMBIE PACK KING (charges + summons minions, capped)
   - **Level 3 — The Abandoned Railroad**: parked-but-"moving" train fought across boxcar roofs (speed lines, smoke, zombie driver gag), giant Zanters that can't fit under the train, DIRT MUTATED ZOMBIE
+  - **Level 4 — The Zombified Lake** (co-designed with Henry 2026-07-12): underwater **swim mode** (↑ thrust, reduced gravity, torpedo dash, dolphin surface pop; land jumps/slam gated off), a ~30s **air meter** with drowning + surface/vent refill, destructible **scuba gear** (5-hit crack stages), water enemies (drowned float-chasers, darting fish schools, ambush eels — all `Hittable`), and the **SUNKEN BEAST kraken** boss (tentacle-guarded head → timed damage window → regrow; aimed laser bubbles; 50% enrage 3-spread + baked red-eye frames). Gated on `def.water`; pure cores `air.ts`/`kraken.ts`/`water.ts`. The walker boss now runs through a shared `BossEncounter` interface alongside the Kraken
 - Zombie variants (`disgusting`, `zanter`) as tint/scale/stat entries in `ZOMBIE.variants`; bosses are data-driven `BossDef`s with optional minion summons
 - **Shop hub between levels** (Blacksmith sword tiers + Apocalypse consumables: potions/shields/extra lives), hardened save/load, pure `resolveDamage` pipeline with auto-potion + in-place Extra Life revive, HUD consumable row
-- **Power monsters**: 4 baked-color zombie variants, named by Henry 2026-07-12 — SKY SCREECHER (`vulture`), FURYFANG (`rage`), TITAN ZOMBIE (`titan`), GEM GUARDIAN (`crystal`); names show as float text on kill. They spawn across Levels 1-3; kills drop buff orbs granting flight / mega damage / giant mode / invincibility with HUD countdowns; orbs magnetize to the player when the boss triggers
+- **Power monsters**: 4 baked-color zombie variants, named by Henry 2026-07-12 — SKY SCREECHER (`vulture`), FURYFANG (`rage`), TITAN ZOMBIE (`titan`), GEM GUARDIAN (`crystal`); names show as float text on kill. They spawn across Levels 1-4 (Gem Guardian + Titan collectible underwater on L4); kills drop buff orbs granting flight / mega damage / giant mode / invincibility with HUD countdowns; orbs magnetize to the player when the boss triggers
 - Advanced graphics: dynamic lighting, postFX, persistent gore decals, baked parallax palettes per level, hit-stop/screen-shake juice
 - Synthesized SFX + ambient music (no audio files)
-- Verified by automated browser playtest: full 3-level progression incl. shop purchases/persistence, power-monster orb→buff→HUD flow, revive edge cases (Canvas) + lights/tints/FX pass (headed WebGL), 100 vitest invariants
+- Verified by automated browser playtest: full 4-level progression incl. shop purchases/persistence, power-monster orb→buff→HUD flow, revive edge cases, the L4 swim/air/scuba/kraken flow (Canvas) + lights/tints/FX + enraged red-eye pass (headed WebGL), 159 vitest invariants
 
-**Next milestones:** Level 4, more difficulty tuning with Henry
+**Next milestones:** Level 4 difficulty/feel tuning with Henry (air budget vs. water depth, murk/shaft readability, drowning-cue urgency, whether a contact-triggered revive should also crack scuba); more levels TBD
 
 ## Gotchas
 
 - Physics world bounds and camera bounds are set separately — BaseLevelScene configures both from `def.worldWidth`
 - Boss arena locks world bounds to x≥`def.arenaLeft` — restore if adding post-boss content
 - **ALL `setTint` is a no-op on the Canvas renderer** (sprites AND TileSprites — verified against Phaser source). Variant/boss tints are a WebGL nicety; bake tints into textures (`PreloadScene.bakeTint`) for anything that must read on canvas. Headless agent-browser = Canvas, so tints never show there — use `--headed` to verify them
+- **Light2D multiplies the diffuse texture, so a colored resting light washes out baked colors.** A baked feature (e.g. the kraken's red enrage eyes) under a differently-colored light reads as the product — cyan light turned red eyes muddy amber. When you swap to a texture whose whole point is a color, recolor the light too (`applyEnrage` recolors `headLight`). Canvas-invisible (lights are no-ops), so only a **headed-WebGL** playtest catches it
+- **Phaser Arcade `overlap`/`collider` always calls back `(singleSprite, groupMember)` regardless of the order you pass a (group, sprite) pair** — it swaps a group-first call internally. So `overlap(group, sprite, (a,b) => …)` gives `a=sprite`, `b=member`, NOT `(member, sprite)`. **Always pass the single sprite first** (every overlap in the codebase does). Passing the group first delivered reversed params and crashed `takeDamage`-on-bubble in the Kraken — a runtime-only bug that was tests/tsc/build-green and only a live playtest surfaced
 - Stepping stones/platforms near the ground need >56px clearance underneath or the player (48px body) wedges against them (test-enforced in `levels.test.ts`)
 - The first zombie must spawn outside aggro+patrol reach of the player spawn or it kills idle players (test-enforced)
 - Zombies spawn with body bottom 8px above ground (variant-aware, `BaseLevelScene.zombieSpawnY`); a body spawned overlapping a solid can wedge — keep ground spawns clear of stair stones/platform bands (see Level 3's relocated Zanter comment)
