@@ -4,7 +4,8 @@ import { BOSS } from '../config';
 import { Juice } from '../core/Juice';
 import { SynthAudio } from '../core/SynthAudio';
 import { dustPuff, flashSprite, knockback, lit, shockwave } from '../fx/Effects';
-import type { BossDef } from '../levels';
+import type { BossDef, WalkerBossDef } from '../levels';
+import type { BossEncounter } from './BossEncounter';
 
 export enum BossState {
   SITTING,
@@ -21,7 +22,7 @@ export enum BossState {
 // The Mutated Zombie — Level 1 boss on a throne of crushed cars.
 // Walks you down, telegraphs charges, and at half health it ENRAGES:
 // red glow, faster, and starts leaping into ground slams with shockwaves.
-export class Boss extends Phaser.Physics.Arcade.Sprite {
+export class Boss extends Phaser.Physics.Arcade.Sprite implements BossEncounter {
   health: number;
   maxHealth: number;
   enraged = false;
@@ -35,11 +36,14 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
   private juice: Juice;
   private anims_ = ZombieAnims.urban;
   private chargeDir = 1;
-  private def: BossDef;
+  private def: WalkerBossDef;
   private nextSummonAt = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, juice: Juice, def: BossDef) {
     super(scene, x, y, Assets.URBAN_IDLE, 0);
+    if (def.kind !== 'walker') {
+      throw new Error(`Boss expects a walker boss def, got kind='${def.kind}'`);
+    }
     this.juice = juice;
     this.def = def;
 
@@ -75,12 +79,32 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
     this.target = target;
   }
 
-  getState(): BossState {
-    return this.bossState;
-  }
-
   getDamage(): number {
     return this.def.contactDamage;
+  }
+
+  // --- BossEncounter interface ---
+
+  get healthRatio(): number {
+    return this.health / this.maxHealth;
+  }
+
+  get contactBodies(): Phaser.Physics.Arcade.Body[] {
+    return [this.body as Phaser.Physics.Arcade.Body];
+  }
+
+  get contactDamage(): number {
+    return this.getDamage();
+  }
+
+  // Contact only hurts while the walker is actively pursuing — the same
+  // FIGHTING/CHARGING/LEAPING gate the scene used to compute via getState().
+  get contactDamageActive(): boolean {
+    return (
+      this.bossState === BossState.FIGHTING ||
+      this.bossState === BossState.CHARGING ||
+      this.bossState === BossState.LEAPING
+    );
   }
 
   get isVulnerable(): boolean {
@@ -159,6 +183,40 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
       ease: 'Quad.easeIn',
       onComplete: () => this.throne.destroy(),
     });
+  }
+
+  // Overlap-and-damage logic, moved verbatim from BaseLevelScene.wireBossHit:
+  // the walker wires the swing against its own body, guards the per-swing
+  // `hitSet`, and reports each connect back so the scene owns the FX / slam
+  // feedback / defeat handling. `isSlam` is unused here (the scene applies the
+  // pogo) but stays in the signature for encounters that need it.
+  wireAttackHitbox(
+    hitbox: Phaser.GameObjects.Rectangle,
+    damage: number,
+    _isSlam: boolean,
+    onHit: (x: number, y: number, died: boolean) => void
+  ): void {
+    if (!this.isVulnerable || this.isDead()) return;
+    const collider = this.scene.physics.add.overlap(hitbox, this, () => {
+      if (this.isDead()) return;
+      const hitSet = hitbox.getData('hitSet') as Set<unknown>;
+      if (hitSet.has(this)) return;
+      hitSet.add(this);
+
+      const died = this.takeDamage(damage);
+      onHit(this.x, this.y, died);
+    });
+    hitbox.once('destroy', () => collider.destroy());
+  }
+
+  // Corpse presentation: sink the throne, freeze the body, play the death anim,
+  // and clean up after 1.6s. Returns the spot the scene should float the key.
+  playDeath(): { x: number; y: number } {
+    this.destroyThrone();
+    this.setVelocity(0, 0);
+    this.play(this.anims_.dead, true);
+    this.scene.time.delayedCall(1600, () => this.destroy());
+    return { x: this.x, y: this.y - 60 };
   }
 
   update(time: number, delta: number) {

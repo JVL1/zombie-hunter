@@ -18,7 +18,8 @@ export type ZombieVariant =
   | 'vulture'
   | 'rage'
   | 'titan'
-  | 'crystal';
+  | 'crystal'
+  | 'drowned';
 
 export interface ZombieVariantDef {
   base: 'zombie' | 'urban'; // which sprite pack + body size to use
@@ -28,8 +29,12 @@ export interface ZombieVariantDef {
   patrolSpeed: number;
   chaseSpeed: number;
   contactDamage: number;
+  // 'swim' = neutral-buoyancy 2D swimmer (Level 4); default/undefined = grounded
+  movement?: 'ground' | 'swim';
   // Power monsters: drop this buff orb on death (Task 14 wires the drop).
   powerUp?: PowerUpType;
+  // In-game name shown when a power monster goes down (Henry named them 2026-07-12).
+  displayName?: string;
   // Baked sheet key prefix — textures register as `${sheet}-idle/walk/attack/hurt/dead`.
   // sheet and animSet are PAIRED: a variant with sheet but no animSet snaps back
   // to the base sheet on the first play() call (anims are bound to texture keys).
@@ -122,6 +127,51 @@ export const BUFF = {
   flightDriftGravityFactor: 0.35,
 };
 
+// Underwater movement + breathing (Level 4). Design: docs/plans/2026-07-12-level4-zombified-lake-design.md
+export const WATER = {
+  airMs: 30000,            // full breath (Henry: "about 30 seconds")
+  warnAtMs: 8000,          // remaining air that triggers "YOU NEED TO GO UP TO BREATHE"
+  drownTickMs: 1000,       // cadence of drowning damage at zero air
+  drownTickDamage: 8,
+  refillRatio: 3,          // vents/surface refill 3x faster than drain
+  scubaDurability: 5,      // cracks per hit before shattering
+  surfaceHysteresisPx: 6,  // anti-flicker band at the surface line
+  gravityFactor: 0.25,     // fraction of world gravity while submerged
+  riseVelocity: -180,      // ↑ thrust cap (gentler than flight's)
+  maxSinkVelocity: 120,
+  torpedoSpeed: 420,       // dash speed underwater (land dash stays PLAYER.dashSpeed)
+  exitImpulse: -120,       // extra pop when crossing the surface upward
+  buoyancyVelocity: 14,    // peak ±velocity of a submerged pickup's gentle bob
+  buoyancyPeriodMs: 1600,  // one full bob cycle (symmetric — zero net drift)
+} as const;
+
+// Zombie Fish — small no-gravity pack darter (Level 4). Wanders near its school
+// anchor until the player enters aggro, then darts along a re-aimed straight-line
+// vector on a fixed cadence.
+export const FISH = {
+  hp: 14,
+  contactDamage: 6,
+  aggroRange: 220,
+  dartSpeed: 200,
+  reaimMs: 600,          // cadence between dart re-aims while chasing
+  wanderSpeed: 45,
+  schoolRadius: 70,      // drift this far from the anchor before heading back
+  wanderMinMs: 700,
+  wanderMaxMs: 1500,
+} as const;
+
+// Zombie Eel — anchored wreck ambusher (Level 4). Coils at its anchor,
+// telegraphs (reusing ZOMBIE lunge windup timing), lunges ~lungeDistance along
+// the player vector, then swims back to the anchor to re-coil.
+export const EEL = {
+  hp: 45,
+  contactDamage: 14,
+  aggroRange: 260,
+  lungeDistance: 300,
+  lungeSpeed: 380,
+  returnSpeed: 130,
+} as const;
+
 export const ZOMBIE = {
   aggroRange: 240,
   deaggroRange: 330,
@@ -142,10 +192,13 @@ export const ZOMBIE = {
     zanter:     { base: 'urban',  hp: 95, tint: 0xcdb892, scale: 1.45, patrolSpeed: 40, chaseSpeed: 72,  contactDamage: 14 },
     // Power monsters (Henry renames later): elite zombies with baked sheets that
     // drop a buff orb. sheet + animSet must stay paired (see ZombieVariantDef).
-    vulture: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 60, chaseSpeed: 110, contactDamage: 10, powerUp: 'flight',     sheet: 'pm-vulture', animSet: 'pm-vulture', bakeColor: 0x5a3a8a },
-    rage:    { base: 'zombie', hp: 80,  scale: 1.05, patrolSpeed: 70, chaseSpeed: 125, contactDamage: 12, powerUp: 'megaDamage', sheet: 'pm-rage',    animSet: 'pm-rage',    bakeColor: 0xaa2222 },
-    titan:   { base: 'urban',  hp: 110, scale: 1.5,  patrolSpeed: 38, chaseSpeed: 65,  contactDamage: 14, powerUp: 'giant',      sheet: 'pm-titan',   animSet: 'pm-titan',   bakeColor: 0x8a8a7a },
-    crystal: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 55, chaseSpeed: 100, contactDamage: 10, powerUp: 'invincible', sheet: 'pm-crystal', animSet: 'pm-crystal', bakeColor: 0x3ad8cc },
+    vulture: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 60, chaseSpeed: 110, contactDamage: 10, powerUp: 'flight',     displayName: 'SKY SCREECHER', sheet: 'pm-vulture', animSet: 'pm-vulture', bakeColor: 0x5a3a8a },
+    rage:    { base: 'zombie', hp: 80,  scale: 1.05, patrolSpeed: 70, chaseSpeed: 125, contactDamage: 12, powerUp: 'megaDamage', displayName: 'FURYFANG',      sheet: 'pm-rage',    animSet: 'pm-rage',    bakeColor: 0xaa2222 },
+    titan:   { base: 'urban',  hp: 110, scale: 1.5,  patrolSpeed: 38, chaseSpeed: 65,  contactDamage: 14, powerUp: 'giant',      displayName: 'TITAN ZOMBIE',  sheet: 'pm-titan',   animSet: 'pm-titan',   bakeColor: 0x8a8a7a },
+    crystal: { base: 'zombie', hp: 80,  scale: 1.1,  patrolSpeed: 55, chaseSpeed: 100, contactDamage: 10, powerUp: 'invincible', displayName: 'GEM GUARDIAN',  sheet: 'pm-crystal', animSet: 'pm-crystal', bakeColor: 0x3ad8cc },
+    // Level 4 swimmer: neutral-buoyancy 2D chaser. Runtime tint only (WebGL nicety,
+    // invisible on Canvas); no bake sheet yet — the bake-color decision defers to playtest.
+    drowned: { base: 'zombie', hp: 60, scale: 1.0, patrolSpeed: 40, chaseSpeed: 70, contactDamage: 10, movement: 'swim', tint: 0x4a7a6a },
   } satisfies Record<ZombieVariant, ZombieVariantDef> as Record<ZombieVariant, ZombieVariantDef>,
 };
 

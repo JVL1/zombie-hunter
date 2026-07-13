@@ -1,17 +1,31 @@
 import Phaser from 'phaser';
 import { Assets } from '../assets';
-import { BOSS, GAME_H, GAME_W, SHOP, WORLD, ZOMBIE, ZombieVariant } from '../config';
+import { BOSS, GAME_H, GAME_W, POWERUPS, SHOP, WATER, WORLD, ZOMBIE, ZombieVariant } from '../config';
+import { AirState, createAirState, grantScuba, restoreAir, scubaHit, tickAir } from '../core/air';
+import { DamageOutcome } from '../core/damage';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
 import { Juice } from '../core/Juice';
 import { SynthAudio } from '../core/SynthAudio';
-import { Boss, BossState } from '../entities/Boss';
-import { AttackEvent, Player, SlamEvent } from '../entities/Player';
+import { inVent, shouldCrackScuba } from '../core/water';
+import { Boss } from '../entities/Boss';
+import type { BossEncounter } from '../entities/BossEncounter';
+import { Eel } from '../entities/Eel';
+import { Fish } from '../entities/Fish';
+import { Hittable } from '../entities/Hittable';
+import { Kraken } from '../entities/Kraken';
+import { AttackEvent, DamageSource, Player, SlamEvent } from '../entities/Player';
 import { Pickup } from '../entities/Pickups';
 import { Zombie } from '../entities/Zombie';
 import { dustPuff, floatText, lit, shockwave } from '../fx/Effects';
 import { GoreSystem } from '../fx/Splatter';
-import { LevelDef } from '../levels';
+import { LevelDef, WaterDef } from '../levels';
+
+// A self-driving water enemy (Fish/Eel): a Hittable that also updates from the
+// scene clock. The base owns the group + all combat plumbing; Task 15 populates
+// it from def.water. Left empty, it is a no-op on Levels 1-3.
+type WaterEnemy = Phaser.GameObjects.GameObject &
+  Hittable & { update(time: number, delta: number): void };
 
 interface ParallaxLayer {
   sprite: Phaser.GameObjects.TileSprite;
@@ -37,10 +51,22 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   protected player!: Player;
   protected solids!: Phaser.Physics.Arcade.StaticGroup;
   protected zombies!: Phaser.GameObjects.Group;
+  // Fish/eel live in their own group so land-zombie wiring is untouched; both
+  // groups flow through the same Hittable combat/contact/straggler plumbing.
+  protected waterEnemies!: Phaser.GameObjects.Group;
   protected pickups!: Phaser.GameObjects.Group;
-  private contactCooldown = new Map<Zombie, number>();
+  private contactCooldown = new Map<Hittable, number>();
 
-  private boss: Boss | null = null;
+  // Breathing/scuba runtime for water levels. Null on Levels 1-3 (no def.water);
+  // Task 13 only establishes it + the scuba grant, Task 15 drives the tick loop.
+  protected air: AirState | null = null;
+  // Water levels only: the intro banner freezes air drain (mirrors the boss
+  // cinematic freeze) until it fades; and a ~2s cadence records the underwater
+  // safe respawn anchor.
+  private introFreezeActive = false;
+  private safePosTimer = 0;
+
+  private boss: BossEncounter | null = null;
   private bossTriggered = false;
   private cinematic = false;
   private lastBossHitTime = 0;
@@ -70,12 +96,16 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.events.off('player-slam-land');
     this.events.off('player-died');
     this.events.off('player-revived');
+    this.events.off('player-hurt');
     this.events.off('boss-shockwave');
     this.events.off('boss-summon');
 
     this.boss = null;
     this.bossTriggered = false;
     this.cinematic = false;
+    this.air = null;
+    this.introFreezeActive = false;
+    this.safePosTimer = 0;
     this.bgLayers = [];
     this.flickerLights = [];
     this.contactCooldown.clear();
@@ -128,9 +158,17 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       const zombie = new Zombie(this, spawn.x, spawn.y ?? this.zombieSpawnY(spawn.variant), spawn.variant);
       zombie.setTarget(this.player);
       zombie.setDepth(5);
+      // Level 4: clamp swim ('drowned') variants below the water surface. No-op
+      // for non-swim variants and for every Level 1-3 zombie (no def.water).
+      if (this.def.water) zombie.setWaterProfile(this.def.water);
       this.zombies.add(zombie);
     }
     this.physics.add.collider(this.zombies, this.solids);
+
+    // --- Water enemies (fish/eel) ---
+    // Empty infrastructure here; Task 15 populates it from def.water on Level 4.
+    // No solid collider — fish/eel are neutral-buoyancy hoverers, not grounded.
+    this.waterEnemies = this.add.group();
 
     // --- Pickups ---
     this.pickups = this.add.group();
@@ -138,20 +176,23 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.pickups, (_p, pickupObj) => {
       const pickup = pickupObj as Pickup;
       const wasKey = pickup.kind === 'key';
+      const wasScuba = pickup.kind === 'scuba';
       pickup.collect(this.player);
       if (wasKey) this.onKeyCollected();
+      if (wasScuba) this.onScubaCollected();
     });
 
-    // --- Contact damage ---
+    // --- Water level: breathing state, swim profiles, vents, fish/eel (L4) ---
+    if (this.def.water) {
+      this.setupWaterLevel(this.def.water);
+    }
+
+    // --- Contact damage --- (zombies + water enemies share the cooldown map)
     this.physics.add.overlap(this.player, this.zombies, (_p, zombieObj) => {
-      const z = zombieObj as Zombie;
-      if (z.isDead() || this.player.isDying) return;
-      const now = this.time.now;
-      const last = this.contactCooldown.get(z) ?? 0;
-      if (now - last > ZOMBIE.contactCooldownMs) {
-        this.contactCooldown.set(z, now);
-        this.player.takeDamage(z.getDamage(), z.x);
-      }
+      this.handleContact(zombieObj as Zombie);
+    });
+    this.physics.add.overlap(this.player, this.waterEnemies, (_p, enemyObj) => {
+      this.handleContact(enemyObj as WaterEnemy);
     });
 
     this.wireCombatEvents();
@@ -200,7 +241,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       alpha: 0,
       delay: 1400,
       duration: 1100,
-      onComplete: () => banner.destroy(),
+      onComplete: () => {
+        // Water levels freeze air drain until the intro banner clears (Task 15).
+        this.introFreezeActive = false;
+        banner.destroy();
+      },
     });
   }
 
@@ -300,22 +345,44 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   // Combat wiring
   // ------------------------------------------------------------------
 
+  // Shared contact-damage gate for both zombies and water enemies, keyed by the
+  // one cooldown map so a swimmer and a zombie can't stack hits within a tick.
+  private handleContact(h: Hittable) {
+    if (h.isDead() || this.player.isDying) return;
+    const now = this.time.now;
+    const last = this.contactCooldown.get(h) ?? 0;
+    if (now - last > ZOMBIE.contactCooldownMs) {
+      this.contactCooldown.set(h, now);
+      this.player.takeDamage(h.contactDamage, h.x, 'contact');
+    }
+  }
+
   private wireCombatEvents() {
     this.events.on('player-attack', ({ hitbox, damage, isFinisher }: AttackEvent) => {
-      const collider = this.physics.add.overlap(hitbox, this.zombies, (_hb, zombieObj) => {
-        const z = zombieObj as Zombie;
-        this.applyHit(hitbox, z, damage, isFinisher, false);
+      const zc = this.physics.add.overlap(hitbox, this.zombies, (_hb, zombieObj) => {
+        this.applyHit(hitbox, zombieObj as Zombie, damage, isFinisher, false);
       });
-      hitbox.once('destroy', () => collider.destroy());
+      const wc = this.physics.add.overlap(hitbox, this.waterEnemies, (_hb, enemyObj) => {
+        this.applyHit(hitbox, enemyObj as WaterEnemy, damage, isFinisher, false);
+      });
+      hitbox.once('destroy', () => {
+        zc.destroy();
+        wc.destroy();
+      });
       this.wireBossHit(hitbox, damage, isFinisher, false);
     });
 
     this.events.on('player-slam', ({ hitbox, damage }: SlamEvent) => {
-      const collider = this.physics.add.overlap(hitbox, this.zombies, (_hb, zombieObj) => {
-        const z = zombieObj as Zombie;
-        this.applyHit(hitbox, z, damage, true, true);
+      const zc = this.physics.add.overlap(hitbox, this.zombies, (_hb, zombieObj) => {
+        this.applyHit(hitbox, zombieObj as Zombie, damage, true, true);
       });
-      hitbox.once('destroy', () => collider.destroy());
+      const wc = this.physics.add.overlap(hitbox, this.waterEnemies, (_hb, enemyObj) => {
+        this.applyHit(hitbox, enemyObj as WaterEnemy, damage, true, true);
+      });
+      hitbox.once('destroy', () => {
+        zc.destroy();
+        wc.destroy();
+      });
       this.wireBossHit(hitbox, damage, true, true);
     });
 
@@ -333,7 +400,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
         Math.abs(this.player.x - x) < BOSS.shockwaveRange &&
         !this.player.isInvulnerable
       ) {
-        this.player.takeDamage(BOSS.shockwaveDamage, x);
+        this.player.takeDamage(BOSS.shockwaveDamage, x, 'contact');
       }
     });
 
@@ -380,19 +447,19 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
   private applyHit(
     hitbox: Phaser.GameObjects.Rectangle,
-    z: Zombie,
+    h: Hittable,
     damage: number,
     big: boolean,
     isSlam: boolean
   ) {
-    if (z.isDead() || !z.active) return;
+    if (h.isDead() || !h.active) return;
     const hitSet = hitbox.getData('hitSet') as Set<unknown>;
-    if (hitSet.has(z)) return;
-    hitSet.add(z);
+    if (hitSet.has(h)) return;
+    hitSet.add(h);
 
-    z.takeDamage(damage);
+    const died = h.takeHit(damage);
     SynthAudio.splat(big);
-    this.gore.burst(z.x, z.y, z.isDead());
+    this.gore.burst(h.x, h.y, died);
 
     if (isSlam) {
       this.player.pogoBounce();
@@ -403,8 +470,8 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       this.juice.shake(0.004, 90);
     }
 
-    if (z.isDead()) {
-      this.onZombieKilled(z);
+    if (died) {
+      this.onEnemyKilled(h);
     }
   }
 
@@ -414,44 +481,53 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     big: boolean,
     isSlam: boolean
   ) {
-    if (!this.boss || !this.boss.isVulnerable || this.boss.isDead()) return;
-    const collider = this.physics.add.overlap(hitbox, this.boss, () => {
-      if (!this.boss || this.boss.isDead()) return;
-      const hitSet = hitbox.getData('hitSet') as Set<unknown>;
-      if (hitSet.has(this.boss)) return;
-      hitSet.add(this.boss);
-
-      const died = this.boss.takeDamage(damage);
+    if (!this.boss) return;
+    // The encounter owns the overlap, the per-swing hitSet guard, and its own
+    // takeDamage; it reports each connect back here so the scene keeps owning the
+    // FX, the slam feedback, and onBossDefeated. (The vulnerable/dead early-out
+    // now lives inside wireAttackHitbox.)
+    this.boss.wireAttackHitbox(hitbox, damage, isSlam, (x, y, died) => {
       SynthAudio.splat(big);
-      this.gore.burst(this.boss.x, this.boss.y, big);
+      this.gore.burst(x, y, big);
       if (isSlam) {
         this.player.pogoBounce();
         this.juice.hitStop(60);
       }
       if (died) this.onBossDefeated();
     });
-    hitbox.once('destroy', () => collider.destroy());
   }
 
-  private onZombieKilled(z: Zombie) {
+  // Shared kill-reward path for every Hittable. Coins + kill-streak credit are
+  // universal (design ruling: fish/eel reward like a zombie kill); the power-orb
+  // and heart drops are zombie-variant specific, so they stay behind an
+  // instanceof branch that fish/eel simply skip.
+  private onEnemyKilled(h: Hittable) {
     SynthAudio.splat(true);
-    this.gore.stampDecal(z.x, (z.body as Phaser.Physics.Arcade.Body).bottom, true);
 
     const streak = this.gameState.registerKill(this.time.now);
     if (streak >= 2) {
-      floatText(this, z.x, z.y - 60, `COMBO x${streak}`, '#ff8833', 15);
+      floatText(this, h.x, h.y - 60, `COMBO x${streak}`, '#ff8833', 15);
     }
 
-    this.pickups.add(new Pickup(this, z.x, z.y - 20, 'coin'));
-    if (z.powerUp) {
-      this.pickups.add(new Pickup(this, z.x, z.y - 30, 'orb', z.powerUp));
-    }
-    if (Math.random() < ZOMBIE.heartDropChance) {
-      this.pickups.add(new Pickup(this, z.x + 14, z.y - 24, 'heart'));
+    this.addPickup(new Pickup(this, h.x, h.y - 20, 'coin'));
+    if (h instanceof Zombie) {
+      // Persistent ground blood decal only for grounded enemies — a floating
+      // fish/eel would otherwise stain open water. (Design call; revisit w/ Henry.)
+      this.gore.stampDecal(h.x, (h.body as Phaser.Physics.Arcade.Body).bottom, true);
+      if (h.powerUp) {
+        this.addPickup(new Pickup(this, h.x, h.y - 30, 'orb', h.powerUp));
+        if (h.displayName) {
+          const hex = `#${POWERUPS[h.powerUp].color.toString(16).padStart(6, '0')}`;
+          floatText(this, h.x, h.y - 84, `${h.displayName} DOWN!`, hex, 16);
+        }
+      }
+      if (Math.random() < ZOMBIE.heartDropChance) {
+        this.addPickup(new Pickup(this, h.x + 14, h.y - 24, 'heart'));
+      }
     }
 
-    this.contactCooldown.delete(z);
-    z.die();
+    this.contactCooldown.delete(h);
+    h.die();
   }
 
   // ------------------------------------------------------------------
@@ -459,33 +535,46 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   // ------------------------------------------------------------------
 
   private createBoss() {
-    this.boss = new Boss(this, this.def.bossSpawnX, WORLD.groundY - 80, this.juice, this.def.boss);
-    this.boss.setTarget(this.player);
-    this.physics.add.collider(this.boss, this.solids);
+    // The one concrete construction site — everything downstream is the interface.
+    // Branch on the discriminant: the walker Boss throws on a kraken def and the
+    // Kraken throws on a walker def, so the def must reach the right constructor.
+    // The Kraken has no ground; it spawns submerged and rises via triggerRise.
+    const bx = this.def.bossSpawnX;
+    const by = WORLD.groundY - 80;
+    const boss =
+      this.def.boss.kind === 'kraken'
+        ? new Kraken(this, bx, by, this.juice, this.def.boss)
+        : new Boss(this, bx, by, this.juice, this.def.boss);
+    boss.setTarget(this.player);
+    this.boss = boss;
 
-    this.physics.add.overlap(this.player, this.boss, () => {
-      if (!this.boss || this.boss.getState() !== BossState.FIGHTING || this.boss.isDead()) {
-        // Charging/leaping also hurt
-        if (
-          !this.boss ||
-          (this.boss.getState() !== BossState.CHARGING &&
-            this.boss.getState() !== BossState.LEAPING)
-        ) {
-          return;
+    // Solids collision + player contact damage wire against the encounter's own
+    // body/bodies (walker: one; kraken: head + tentacles). The FIGHTING/CHARGING/
+    // LEAPING gate is now the encounter's contactDamageActive flag.
+    for (const body of boss.contactBodies) {
+      this.physics.add.collider(body.gameObject, this.solids);
+      this.physics.add.overlap(this.player, body.gameObject, (_p, bossObj) => {
+        if (!this.boss || !this.boss.contactDamageActive) return;
+        const now = this.time.now;
+        if (now - this.lastBossHitTime > 1000 && !this.player.isDying) {
+          this.lastBossHitTime = now;
+          this.player.takeDamage(
+            this.boss.contactDamage,
+            (bossObj as Phaser.GameObjects.Sprite).x,
+            'contact'
+          );
         }
-      }
-      const now = this.time.now;
-      if (now - this.lastBossHitTime > 1000 && !this.player.isDying) {
-        this.lastBossHitTime = now;
-        this.player.takeDamage(this.boss.getDamage(), this.boss.x);
-      }
-    });
+      });
+    }
   }
 
   private triggerBossEncounter() {
     if (!this.boss) return;
     this.bossTriggered = true;
     this.cinematic = true;
+    // Freeze the kraken's bubbles for the WHOLE cutscene, including the rise
+    // (triggerRise fires 1300ms in) — no-op on the walker (no setFrozen).
+    this.boss.setFrozen?.(true);
 
     // Letterbox bars
     const barTop = this.add
@@ -514,6 +603,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
       // Clear stragglers before shrinking the world
       this.zombies.getChildren().slice().forEach((z) => (z as Zombie).destroy());
+      this.waterEnemies.getChildren().slice().forEach((e) => (e as WaterEnemy).destroy());
       this.contactCooldown.clear();
 
       this.time.delayedCall(1100, () => {
@@ -532,6 +622,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
         cam.startFollow(this.player, true, 0.12, 0.12);
         this.showBossHealthBar();
         this.cinematic = false;
+        this.boss?.setFrozen?.(false); // kraken bubbles resume as the fight begins
 
         this.tweens.add({ targets: barTop, y: -30, duration: 400 });
         this.tweens.add({ targets: barBot, y: GAME_H + 30, duration: 400, onComplete: () => {
@@ -569,9 +660,13 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
   private onBossDefeated() {
     if (!this.boss) return;
-    const bossX = this.boss.x;
-    const bossY = this.boss.y;
-    const bossBottom = (this.boss.body as Phaser.Physics.Arcade.Body).bottom;
+    // Read the corpse anchor through the interface: the first contact body's
+    // gameObject is the boss sprite (its x/y match the old this.boss.x/y) and its
+    // body.bottom is the ground contact used for the blood decals.
+    const bossSprite = this.boss.contactBodies[0].gameObject as Phaser.GameObjects.Sprite;
+    const bossX = bossSprite.x;
+    const bossY = bossSprite.y;
+    const bossBottom = this.boss.contactBodies[0].bottom;
 
     SynthAudio.roar();
     this.juice.slowMo(900, 0.3);
@@ -581,21 +676,23 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.gore.burst(bossX, bossY - 30, true);
     this.gore.burst(bossX - 30, bossY + 10, true);
     this.gore.burst(bossX + 30, bossY, true);
-    this.gore.stampDecal(bossX, bossBottom, true);
-    this.gore.stampDecal(bossX - 40, bossBottom, true);
-    this.gore.stampDecal(bossX + 40, bossBottom, true);
+    // Ground blood decals only for the grounded walker — the floating kraken has
+    // no ground contact, so a ground-line stamp reads wrong; its playDeath owns
+    // the underwater sink-and-dissolve gore instead.
+    if (this.def.boss.kind === 'walker') {
+      this.gore.stampDecal(bossX, bossBottom, true);
+      this.gore.stampDecal(bossX - 40, bossBottom, true);
+      this.gore.stampDecal(bossX + 40, bossBottom, true);
+    }
 
-    this.boss.destroyThrone();
+    // Corpse presentation (throne sink + death anim + delayed destroy) lives in
+    // the encounter now; it returns the key-drop spot.
+    const keySpot = this.boss.playDeath();
     this.bossHealthBar?.destroy();
     this.bossHealthBarBg?.destroy();
     this.bossNameText?.destroy();
     this.bossHealthBar = null;
-
-    const corpse = this.boss;
     this.boss = null;
-    corpse.setVelocity(0, 0);
-    corpse.play('urban-dead', true);
-    this.time.delayedCall(1600, () => corpse.destroy());
 
     // Summoned minions pop when their king dies — no stragglers past the fight
     this.zombies
@@ -606,18 +703,191 @@ export abstract class BaseLevelScene extends Phaser.Scene {
         this.gore.burst(z.x, z.y, false);
         z.destroy();
       });
+    this.waterEnemies
+      .getChildren()
+      .slice()
+      .forEach((eObj) => {
+        const e = eObj as WaterEnemy;
+        this.gore.burst(e.x, e.y, false);
+        e.destroy();
+      });
     this.contactCooldown.clear();
 
-    // The level key floats down
+    // The level key floats down at the encounter's returned spot (== bossY - 60)
     this.time.delayedCall(800, () => {
-      this.pickups.add(new Pickup(this, bossX, bossY - 60, 'key'));
+      this.addPickup(new Pickup(this, keySpot.x, keySpot.y, 'key'));
     });
 
     // Boss bounty: a burst of coins around the corpse
     for (let i = 0; i < SHOP.bossCoinBurst; i++) {
       const spread = (i - (SHOP.bossCoinBurst - 1) / 2) * 18;
-      this.pickups.add(new Pickup(this, bossX + spread, bossY - 40, 'coin'));
+      this.addPickup(new Pickup(this, bossX + spread, bossY - 40, 'coin'));
     }
+  }
+
+  // Single spawn path for every pickup so the underwater buoyancy rule applies
+  // uniformly: on a water level, anything dropped below the surface floats
+  // (gravity off + gentle bob) instead of sinking to the lake bed out of reach.
+  private addPickup(pickup: Pickup): Pickup {
+    this.pickups.add(pickup);
+    if (this.def.water && pickup.y > this.def.water.surfaceY) {
+      pickup.floatInWater();
+    }
+    return pickup;
+  }
+
+  private onScubaCollected() {
+    // grantScuba is pure — reassign the returned state. SynthAudio.key() is the
+    // placeholder ping (reused until Henry wants a custom scuba sound).
+    if (this.air) this.air = grantScuba(this.air);
+    SynthAudio.key();
+  }
+
+  // ------------------------------------------------------------------
+  // Water system (Level 4 — all gated on def.water; a no-op on Levels 1-3)
+  // ------------------------------------------------------------------
+
+  // One-time setup: breathing state, swim profiles, vent bubbles, fish/eel, and
+  // the scuba-crack / revive-air / HUD-cleanup listeners.
+  private setupWaterLevel(water: WaterDef) {
+    this.air = createAirState();
+    this.introFreezeActive = true; // air is frozen until the intro banner fades
+    this.player.setWaterProfile(water);
+
+    // Scuba pickup — collect grants scuba via onScubaCollected.
+    this.addPickup(new Pickup(this, water.scuba.x, water.scuba.y, 'scuba'));
+
+    // Vent bubble columns — purely visual (no per-bubble physics bodies). The
+    // inVent refill is a geometric test in tickWater, not a physics zone.
+    for (const vent of water.vents) {
+      this.add
+        .particles(vent.x, WORLD.groundY, Assets.VENT_BUBBLE, {
+          x: { min: -vent.width / 2, max: vent.width / 2 },
+          // Fill the whole topY→lakebed refill band so the breathable column is
+          // visible wherever the inVent geometry test (same vent.topY) accepts it.
+          y: { min: vent.topY - WORLD.groundY, max: 0 },
+          speedY: { min: -60, max: -110 },
+          speedX: { min: -10, max: 10 },
+          scale: { start: 0.6, end: 1.3 },
+          alpha: { start: 0.6, end: 0 },
+          lifespan: { min: 1800, max: 3200 },
+          frequency: 130,
+          quantity: 1,
+        })
+        .setDepth(2);
+    }
+
+    // Fish schools + eels populate the (else-empty) waterEnemies group; all
+    // combat/contact/straggler plumbing already flows through it.
+    for (const school of water.fishSchools) {
+      for (let i = 0; i < school.count; i++) {
+        const fish = new Fish(
+          this,
+          school.x + Phaser.Math.Between(-40, 40),
+          school.y + Phaser.Math.Between(-30, 30)
+        );
+        fish.setTarget(this.player);
+        fish.setDepth(5);
+        this.waterEnemies.add(fish);
+      }
+    }
+    for (const anchor of water.eels) {
+      const eel = new Eel(this, anchor.x, anchor.y);
+      eel.setTarget(this.player);
+      eel.setDepth(5);
+      this.waterEnemies.add(eel);
+    }
+
+    // Scuba cracks only when a NON-drowning hit actually lands on the body
+    // (hurt / potioned / revived) — an i-frame-ignored or shield-absorbed hit
+    // must not crack it. Registered after the create() events.off sweep so it
+    // can't stack across scene restarts.
+    this.events.on(
+      'player-hurt',
+      ({ outcome, source }: { outcome: DamageOutcome; source: DamageSource }) => {
+        if (!this.air || this.air.scubaDurability <= 0) return;
+        if (!shouldCrackScuba(outcome, source)) return;
+        const res = scubaHit(this.air);
+        this.air = res.state;
+        if (res.broke) this.shatterScuba();
+      }
+    );
+
+    // Extra Life revive underwater: air is scene-owned (survives the revive) but
+    // topped to 50% so a revive mid-drown doesn't immediately re-drown. Scuba is
+    // untouched.
+    this.events.on('player-revived', () => {
+      if (this.air) this.air = restoreAir(this.air, 0.5);
+    });
+
+    // Drop the HUD air snapshot when the scene ends (Task 16's HUD reads it).
+    this.events.once('shutdown', () => this.registry.remove('airHud'));
+  }
+
+  private shatterScuba() {
+    floatText(this, this.player.x, this.player.y - 50, 'SCUBA DESTROYED!', '#ff5555', 16);
+    const shatter = this.add
+      .particles(this.player.x, this.player.y, Assets.VENT_BUBBLE, {
+        speed: { min: 40, max: 150 },
+        angle: { min: 0, max: 360 },
+        scale: { start: 1.4, end: 0 },
+        alpha: { start: 0.9, end: 0 },
+        lifespan: 500,
+        emitting: false,
+      })
+      .setDepth(7);
+    shatter.explode(16);
+    this.time.delayedCall(700, () => shatter.destroy());
+  }
+
+  // Per-frame breathing tick: drain/refill air, apply drown damage, surface the
+  // warning, record the safe respawn anchor, and publish the HUD snapshot.
+  private tickWater(delta: number) {
+    if (!this.air || !this.def.water) return;
+    const water = this.def.water;
+    const player = this.player;
+
+    const playerInVent = inVent(player.x, player.y, water.vents);
+    const frozen = this.cinematic || this.introFreezeActive;
+
+    const { state, effects } = tickAir(this.air, delta, {
+      breathing: player.canBreathe,
+      inVent: playerInVent,
+      frozen,
+    });
+    this.air = state;
+
+    // Drowning bypasses the shield but still respects i-frames (resolveDamage),
+    // so a post-revive tick in the same frame is safely ignored.
+    for (let i = 0; i < effects.damageTicks; i++) {
+      player.takeDamage(WATER.drownTickDamage, player.x, 'drowning');
+    }
+    if (effects.warningStarted) {
+      floatText(this, player.x, player.y - 60, 'YOU NEED TO GO UP TO BREATHE', '#66ddff', 14);
+    }
+
+    // Record a safe underwater respawn anchor ~every 2s while not drowning —
+    // lastGroundedPos is stale underwater (the player is never grounded there).
+    if (!frozen) {
+      this.safePosTimer += delta;
+      const notDrowning = this.air.airMs > 0 || this.air.scubaDurability > 0;
+      if (this.safePosTimer >= 2000 && notDrowning && !player.isDying) {
+        this.safePosTimer = 0;
+        const b = this.physics.world.bounds;
+        player.setReviveAnchor(
+          Phaser.Math.Clamp(player.x, b.x + 30, b.right - 30),
+          Phaser.Math.Clamp(player.y, b.y + 30, b.bottom - 30)
+        );
+      }
+    }
+
+    this.registry.set('airHud', {
+      airMs: this.air.airMs,
+      maxAirMs: WATER.airMs,
+      scubaDurability: this.air.scubaDurability,
+      warned: this.air.warned,
+      drowning: this.air.airMs <= 0 && this.air.scubaDurability === 0,
+    });
   }
 
   private onKeyCollected() {
@@ -654,8 +924,18 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       this.player.update();
     }
 
+    // Breathing/air tick (water levels only) — after player.update() so
+    // canBreathe reflects this frame's position (except during the cinematic,
+    // where player.update() is skipped but `frozen` suppresses the breathing
+    // read anyway). Air is frozen through the intro banner + boss cinematic.
+    if (this.def.water) this.tickWater(delta);
+
     for (const z of this.zombies.getChildren().slice()) {
       if (z.active) (z as Zombie).update(time, delta);
+    }
+
+    for (const e of this.waterEnemies.getChildren().slice()) {
+      if (e.active) (e as WaterEnemy).update(time, delta);
     }
 
     for (const p of this.pickups.getChildren()) {
@@ -685,7 +965,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     if (this.boss && !this.boss.isDead()) {
       this.boss.update(time, delta);
       if (this.bossHealthBar) {
-        this.bossHealthBar.width = 360 * Math.max(0, this.boss.health / this.boss.maxHealth);
+        this.bossHealthBar.width = 360 * Math.max(0, this.boss.healthRatio);
       }
     }
   }

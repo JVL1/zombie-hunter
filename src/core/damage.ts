@@ -13,13 +13,14 @@ export type DamageOutcome = 'ignored' | 'absorbed' | 'hurt' | 'potioned' | 'revi
 export function resolveDamage(
   state: DamageState,
   amount: number,
-  invulnerable: boolean
+  invulnerable: boolean,
+  bypassShield = false
 ): { state: DamageState; outcome: DamageOutcome } {
   if (invulnerable) {
     return { state: { ...state }, outcome: 'ignored' };
   }
 
-  if (state.shieldHits > 0) {
+  if (!bypassShield && state.shieldHits > 0) {
     return {
       state: { ...state, shieldHits: state.shieldHits - 1 },
       outcome: 'absorbed',

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Assets, PlayerAnims } from '../assets';
-import { BUFF, COMBAT, PLAYER, POWERUPS, SHOP } from '../config';
+import { BUFF, COMBAT, PLAYER, POWERUPS, SHOP, WATER } from '../config';
 import { resolveDamage } from '../core/damage';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
@@ -18,6 +18,8 @@ export interface SlamEvent {
   hitbox: Phaser.GameObjects.Rectangle;
   damage: number;
 }
+
+export type DamageSource = 'contact' | 'projectile' | 'drowning';
 
 // The zombie hunter. Modern platformer feel: coyote time, jump buffer,
 // variable jump height, double jump, dash with i-frames, 3-hit sword combo,
@@ -49,6 +51,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private invulnUntil = 0;
   private dying = false;
   private lastGroundedPos: { x: number; y: number };
+
+  // Environment (water) state — set by the level via setWaterProfile (Level 4).
+  // Without a profile, inWater/canBreathe stay false and the whole swim path is
+  // dead code, so Levels 1-3 land behavior is provably untouched.
+  private waterProfile?: { surfaceY: number };
+  private _inWater = false;
+  private _canBreathe = false;
 
   // Buff state
   private appliedVisualScale = 1;
@@ -91,6 +100,28 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return this.flipX ? 1 : -1;
   }
 
+  // Level 4 wires this (Task 15); Levels 1-3 never call it, so waterProfile stays
+  // undefined and inWater/canBreathe are always false.
+  setWaterProfile(water?: { surfaceY: number }) {
+    this.waterProfile = water;
+  }
+
+  // Water levels (Task 15): the scene records a safe underwater respawn point
+  // (the player is never grounded underwater, so lastGroundedPos would be stale)
+  // and pushes it here. revive() then respawns at this anchor, clamped to bounds.
+  setReviveAnchor(x: number, y: number) {
+    this.lastGroundedPos.x = x;
+    this.lastGroundedPos.y = y;
+  }
+
+  get inWater(): boolean {
+    return this._inWater;
+  }
+
+  get canBreathe(): boolean {
+    return this._canBreathe;
+  }
+
   get isDying(): boolean {
     return this.dying;
   }
@@ -118,6 +149,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const now = this.scene.time.now;
     const body = this.body as Phaser.Physics.Arcade.Body;
     const grounded = body.blocked.down;
+
+    // --- Environment mode: derive water flags, then the dolphin-arc exit pop ---
+    const wasInWater = this._inWater;
+    this.deriveWaterState(body);
+    // Crossing the surface upward: one extra pop out of the water.
+    if (wasInWater && !this._inWater && body.velocity.y < 0) {
+      this.setVelocityY(body.velocity.y + WATER.exitImpulse);
+    }
+    // A slam started on land and carried into the water ends on entry: there is
+    // no slam underwater, and its fast-fall would otherwise punch through the
+    // buoyancy sink clamp and rocket the player to the lakebed.
+    if (!wasInWater && this._inWater && this.slamHitbox) {
+      this.endSlam();
+    }
 
     // --- Landing ---
     if (grounded && !this.wasGrounded) {
@@ -153,35 +198,54 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.setAccelerationX(0);
       }
 
-      // --- Jump (buffered + coyote + double) ---
-      const canCoyote = now - this.lastGroundedAt <= PLAYER.coyoteMs;
-      if (this.controls.jumpJustPressed || grounded) {
-        if (this.controls.consumeBufferedJump()) {
-          if (grounded || canCoyote) {
-            this.doJump(false);
-          } else if (this.jumpsLeft > 0 && this.jumpsLeft < PLAYER.maxJumps) {
-            this.doJump(true);
-          } else if (this.jumpsLeft === PLAYER.maxJumps) {
-            // Was airborne without jumping (walked off ledge, past coyote)
-            this.jumpsLeft = PLAYER.maxJumps - 1;
-            this.doJump(true);
+      // --- Jump (buffered + coyote + double) --- gated out underwater: no
+      // ground/double/buffered jump fires (a buffered surface press must not
+      // launch -470 at the lakebed) and jumpCut can't fight the swim thrust.
+      if (!this.inWater) {
+        const canCoyote = now - this.lastGroundedAt <= PLAYER.coyoteMs;
+        if (this.controls.jumpJustPressed || grounded) {
+          if (this.controls.consumeBufferedJump()) {
+            if (grounded || canCoyote) {
+              this.doJump(false);
+            } else if (this.jumpsLeft > 0 && this.jumpsLeft < PLAYER.maxJumps) {
+              this.doJump(true);
+            } else if (this.jumpsLeft === PLAYER.maxJumps) {
+              // Was airborne without jumping (walked off ledge, past coyote)
+              this.jumpsLeft = PLAYER.maxJumps - 1;
+              this.doJump(true);
+            }
           }
         }
-      }
 
-      // Variable jump height: release early to cut the jump short
-      if (!this.controls.jumpHeld && body.velocity.y < PLAYER.jumpCutVelocity) {
-        this.setVelocityY(PLAYER.jumpCutVelocity);
+        // Variable jump height: release early to cut the jump short
+        if (!this.controls.jumpHeld && body.velocity.y < PLAYER.jumpCutVelocity) {
+          this.setVelocityY(PLAYER.jumpCutVelocity);
+        }
       }
     }
 
-    // --- Flight buff: hold jump to thrust upward, drift down when falling ---
+    // --- Environment mode: upward thrust (swim / flight), then ONE gravity
+    // resolution. Land behavior is bit-identical: with no water profile inWater
+    // is always false, so the swim branches never run and the flight math below
+    // reproduces the old velocities and gravity exactly.
     const gs = this.gameState;
-    if (gs.canFly(now) && !this.dashing) {
-      const dt = this.scene.game.loop.delta;
-      // Thrust toward the rise cap — jetpack feel. Never touch an ascent
-      // already faster than the cap (fresh jump), or it would brake mid-jump.
-      if (!grounded && this.controls.jumpHeld && body.velocity.y > BUFF.flightRiseVelocity) {
+    const dt = this.scene.game.loop.delta;
+    const canFly = gs.canFly(now);
+
+    // Hold ↑/jump to thrust upward — same ramp shape underwater and in flight,
+    // just different caps. Never touch an ascent already faster than the cap
+    // (fresh jump / fast rise), or it would brake mid-ascent.
+    if (!this.dashing && this.controls.jumpHeld) {
+      if (this.inWater) {
+        if (body.velocity.y > WATER.riseVelocity) {
+          this.setVelocityY(
+            Math.max(
+              body.velocity.y + WATER.riseVelocity * (dt / 1000) * BUFF.flightThrustRamp,
+              WATER.riseVelocity
+            )
+          );
+        }
+      } else if (canFly && !grounded && body.velocity.y > BUFF.flightRiseVelocity) {
         this.setVelocityY(
           Math.max(
             body.velocity.y + BUFF.flightRiseVelocity * (dt / 1000) * BUFF.flightThrustRamp,
@@ -189,14 +253,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
           )
         );
       }
-      // Gravity-reduced drift while falling; offsets world gravity down to
-      // flightDriftGravityFactor of normal
-      const drifting = !grounded && body.velocity.y > 0;
-      body.setGravityY(
-        drifting ? -this.scene.physics.world.gravity.y * (1 - BUFF.flightDriftGravityFactor) : 0
-      );
-    } else if (body.gravity.y !== 0) {
-      body.setGravityY(0); // buff ended (or dashing) — never leave the offset behind
+    }
+
+    // gravity precedence: dash → swimming → flight → normal (design ruling)
+    const flightDrifting = canFly && !grounded && body.velocity.y > 0;
+    let g = 0;
+    if (!this.dashing) {
+      if (this.inWater) g = -this.scene.physics.world.gravity.y * (1 - WATER.gravityFactor);
+      else if (flightDrifting)
+        g = -this.scene.physics.world.gravity.y * (1 - BUFF.flightDriftGravityFactor);
+    }
+    if (body.gravity.y !== g) body.setGravityY(g);
+
+    // Sink clamp: buoyant water never lets you plummet.
+    if (this.inWater && body.velocity.y > WATER.maxSinkVelocity) {
+      this.setVelocityY(WATER.maxSinkVelocity);
     }
 
     // --- Attack ---
@@ -260,6 +331,38 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.swordOverlay.setScale(wantScale);
     if (this.lamp) {
       this.lamp.setPosition(this.x, this.y - 10);
+    }
+  }
+
+  // Derive inWater (body center vs surfaceY) and canBreathe (head sample = body
+  // top + 6px, vs surfaceY) once per frame. Each flag is stateful with a ±hyst
+  // band so it can't flicker on the surface line. No profile → both stay false.
+  private deriveWaterState(body: Phaser.Physics.Arcade.Body) {
+    const water = this.waterProfile;
+    if (!water) {
+      this._inWater = false;
+      this._canBreathe = false;
+      return;
+    }
+    const hyst = WATER.surfaceHysteresisPx;
+    const surfaceY = water.surfaceY;
+
+    // inWater: enter when body center sinks below surface+hyst, exit when it
+    // rises above surface-hyst.
+    const centerY = body.center.y;
+    if (this._inWater) {
+      if (centerY < surfaceY - hyst) this._inWater = false;
+    } else if (centerY > surfaceY + hyst) {
+      this._inWater = true;
+    }
+
+    // canBreathe: the head sample must clear the surface. Gain breath when the
+    // sample rises above surface-hyst, lose it when it sinks below surface+hyst.
+    const headY = body.top + 6;
+    if (this._canBreathe) {
+      if (headY > surfaceY + hyst) this._canBreathe = false;
+    } else if (headY < surfaceY - hyst) {
+      this._canBreathe = true;
     }
   }
 
@@ -328,8 +431,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     body.setAllowGravity(false);
     this.setAccelerationX(0);
     this.setDragX(0); // constant speed for the whole dash
-    this.setMaxVelocity(PLAYER.dashSpeed, 900);
-    this.setVelocity(this.facing * PLAYER.dashSpeed, 0);
+    // Torpedo underwater; land dash is unchanged. i-frames come from dashing===true.
+    const dashSpeed = this.inWater ? WATER.torpedoSpeed : PLAYER.dashSpeed;
+    this.setMaxVelocity(dashSpeed, 900);
+    this.setVelocity(this.facing * dashSpeed, 0);
     SynthAudio.dash();
 
     this.dashTrailEvent = this.scene.time.addEvent({
@@ -357,7 +462,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const airborne = !body.blocked.down;
     const falling = body.velocity.y > -50;
 
-    if (airborne && falling && !this.slamHitbox) {
+    // Underwater there is no slam — a sinking attack falls through to the normal
+    // combo (comboStep starts at 1).
+    if (!this.inWater && airborne && falling && !this.slamHitbox) {
       this.startSlam();
       return;
     }
@@ -460,9 +567,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // NOTE: any future out-of-bounds kill volume (pits, crushers) must route
   // through takeDamage — never call die() directly, or shields/potions/Extra
   // Lives in the resolveDamage pipeline won't fire.
-  takeDamage(amount: number, fromX: number) {
+  takeDamage(amount: number, fromX: number, source: DamageSource = 'contact') {
     if (this.dying) return;
     const gs = this.gameState;
+    const isDrowning = source === 'drowning';
     const { state, outcome } = resolveDamage(
       {
         health: gs.health,
@@ -472,8 +580,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         lives: gs.lives,
       },
       amount,
-      this.isInvulnerable
+      this.isInvulnerable,
+      isDrowning
     );
+    // Emitted here (before GameState is written below) so 'ignored' i-frame hits
+    // still notify. Listeners get the resolved `outcome`/`source` only — gs.health
+    // /lives are NOT yet updated at emit time, so don't read them in the handler.
+    this.scene.events.emit('player-hurt', { outcome, source });
     if (outcome === 'ignored') return; // i-frames/dash: no knockback, no sound
 
     gs.health = state.health;
@@ -490,7 +603,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
-    this.invulnUntil = this.scene.time.now + PLAYER.hurtInvulnMs;
+    if (!isDrowning) {
+      this.invulnUntil = this.scene.time.now + PLAYER.hurtInvulnMs;
+    }
     if (outcome === 'absorbed') {
       SynthAudio.shield();
       flashSprite(this, 0xffd700); // shield gold — no health (red) flash
@@ -499,22 +614,24 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       flashSprite(this, 0xff4444);
     }
 
-    const dir = this.x < fromX ? -1 : 1;
-    this.setVelocity(dir * PLAYER.contactKnockback, -180);
+    if (!isDrowning) {
+      const dir = this.x < fromX ? -1 : 1;
+      this.setVelocity(dir * PLAYER.contactKnockback, -180);
 
-    // Invulnerability blink
-    this.hurtBlinkTween?.stop();
-    this.hurtBlinkTween = this.scene.tweens.add({
-      targets: this,
-      alpha: 0.3,
-      duration: 90,
-      yoyo: true,
-      repeat: Math.floor(PLAYER.hurtInvulnMs / 180),
-      onComplete: () => {
-        this.setAlpha(1);
-        this.hurtBlinkTween = null;
-      },
-    });
+      // Invulnerability blink
+      this.hurtBlinkTween?.stop();
+      this.hurtBlinkTween = this.scene.tweens.add({
+        targets: this,
+        alpha: 0.3,
+        duration: 90,
+        yoyo: true,
+        repeat: Math.floor(PLAYER.hurtInvulnMs / 180),
+        onComplete: () => {
+          this.setAlpha(1);
+          this.hurtBlinkTween = null;
+        },
+      });
+    }
 
     if (outcome === 'potioned') {
       floatText(this.scene, this.x, this.y - 50, 'POTION!', '#ff6688', 14);

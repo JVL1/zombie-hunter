@@ -88,6 +88,29 @@ export const Assets = {
   P_SMOKE: 'p-smoke',
   P_SPEEDLINE: 'p-speedline',
 
+  // Zombified Lake (Level 4) — baked parallax + generated wreck tiles
+  LAKE_NIGHT_FAR: 'lake-night-far',
+  LAKE_NIGHT_MID: 'lake-night-mid',
+  LAKE_NIGHT_NEAR: 'lake-night-near',
+  LAKE_GROUND_TOP: 'gen-lake-ground-top',
+  LAKE_GROUND_FILL: 'gen-lake-ground-fill',
+  LAKE_PLATFORM: 'gen-lake-platform',
+  LAKE_STONE: 'gen-lake-stone',
+  // Lake entities + HUD (Tasks 11/12/16 consume these)
+  VENT_BUBBLE: 'p-bubble',
+  SCUBA_PICKUP: 'gen-scuba-pickup',
+  SCUBA_HUD_0: 'scuba-hud-0',
+  SCUBA_HUD_1: 'scuba-hud-1',
+  SCUBA_HUD_2: 'scuba-hud-2',
+  SCUBA_HUD_3: 'scuba-hud-3',
+  SCUBA_HUD_4: 'scuba-hud-4',
+  FISH_SHEET: 'gen-fish-sheet',
+  EEL_SHEET: 'gen-eel-sheet',
+  KRAKEN_HEAD: 'gen-kraken-head',
+  KRAKEN_HEAD_ENRAGED: 'gen-kraken-head-enraged',
+  TENTACLE_SEGMENT: 'gen-tentacle-segment',
+  LASER_BUBBLE: 'gen-laser-bubble',
+
   // Shop (between-levels hub) — generated props + HUD consumable icons
   SHOP_ANVIL: 'gen-shop-anvil',
   SHOP_SHACK: 'gen-shop-shack',
@@ -95,6 +118,28 @@ export const Assets = {
   SHOP_ICON_POTION: 'gen-shop-icon-potion',
   SHOP_ICON_SHIELD: 'gen-shop-icon-shield',
   SHOP_ICON_LIFE: 'gen-shop-icon-life',
+} as const;
+
+// Scuba HUD icons indexed by crack stage 0 (pristine) .. 4 (about to shatter).
+// Task 16's HUD maps durability (5..0) to a stage and reads this array.
+export const ScubaHudFrames: readonly string[] = [
+  Assets.SCUBA_HUD_0,
+  Assets.SCUBA_HUD_1,
+  Assets.SCUBA_HUD_2,
+  Assets.SCUBA_HUD_3,
+  Assets.SCUBA_HUD_4,
+];
+
+// Lake enemy anim keys registered by registerLakeAnims (src/art/lake.ts) —
+// the contract for Task 11 (kraken) and Task 12 (fish/eel). Eel poses are
+// single-frame anims its state machine plays by key.
+export const LakeAnims = {
+  FISH_SWIM: 'fish-swim',
+  EEL_COIL: 'eel-coil',
+  EEL_TELEGRAPH: 'eel-telegraph',
+  EEL_LUNGE: 'eel-lunge',
+  KRAKEN_IDLE: 'kraken-idle',
+  KRAKEN_ENRAGED: 'kraken-enraged',
 } as const;
 
 // Per-buff baked orb textures — keyed by PowerUpType so adding a powerup

@@ -3,8 +3,16 @@ import { ZombieAnims, ZombieAnimSet } from '../assets';
 import { PowerUpType, ZOMBIE, ZombieVariant, ZombieVariantDef } from '../config';
 import { SynthAudio } from '../core/SynthAudio';
 import { dustPuff, flashSprite, floatText, knockback, lit } from '../fx/Effects';
+import { Hittable } from './Hittable';
 
 export type { ZombieVariant } from '../config';
+
+// Level 4 drowned-swimmer surface containment (Task 15). The swim path has no
+// ceiling, so a chasing drowned would breach the surface and swim above the
+// water; these keep its body clamped below the surface line and give a
+// de-aggroed drowned a comfortable rest depth instead of stranding it at the top.
+const DROWNED_SUBMERGE_MARGIN = 10; // px the body top stays below surfaceY
+const DROWNED_REST_DEPTH = 110; // px below the surface a patrolling drowned settles toward
 
 enum ZombieState {
   PATROL,
@@ -17,7 +25,7 @@ enum ZombieState {
 // Patrols until the player gets close, then chases. In melee range it
 // telegraphs a lunge (flash + crouch) before leaping. If the player is on a
 // platform above, it hops pathetically and fails — Henry's favorite feature.
-export class Zombie extends Phaser.Physics.Arcade.Sprite {
+export class Zombie extends Phaser.Physics.Arcade.Sprite implements Hittable {
   health: number;
   maxHealth: number;
   private anims_: ZombieAnimSet;
@@ -33,6 +41,9 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
   private nextGroanAt = 0;
   private dying = false;
   private windupTween: Phaser.Tweens.Tween | null = null;
+  // Level 4 only: the water surface line for drowned swim containment. Undefined
+  // on Levels 1-3, so the swim clamp below is dead code there.
+  private swimSurfaceY?: number;
   private healthBar: Phaser.GameObjects.Rectangle | null = null;
   private healthBarBg: Phaser.GameObjects.Rectangle | null = null;
 
@@ -57,6 +68,8 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
     this.health = this.maxHealth;
 
     this.setCollideWorldBounds(true);
+    // Swim variants (Level 4) are neutral-buoyancy: no gravity, they hover.
+    if (v.movement === 'swim') (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
     if (v.base === 'urban') {
       this.body!.setSize(40, 80);
       this.body!.setOffset(44, 48);
@@ -75,8 +88,27 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
     this.target = target;
   }
 
+  // Level 4 wires the water surface (Task 15); only the 'drowned' swim path reads
+  // it, so land zombies (movement undefined/'ground') are provably unaffected.
+  setWaterProfile(water?: { surfaceY: number }) {
+    this.swimSurfaceY = water?.surfaceY;
+  }
+
   getDamage(): number {
     return this.vdef.contactDamage;
+  }
+
+  // Hittable: contact-hit damage (alias of getDamage), and a sword-hit apply
+  // that reports whether this hit was the killing blow. takeDamage stays the
+  // canonical mutator — takeHit just wraps it so the scene's shared combat path
+  // reads one boolean instead of re-checking isDead().
+  get contactDamage(): number {
+    return this.getDamage();
+  }
+
+  takeHit(amount: number): boolean {
+    this.takeDamage(amount);
+    return this.isDead();
   }
 
   get isLunging(): boolean {
@@ -86,6 +118,11 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
   // Buff orb this monster drops on death (undefined for regular zombies)
   get powerUp(): PowerUpType | undefined {
     return this.vdef.powerUp;
+  }
+
+  // Henry's name for this power monster (undefined for regular zombies)
+  get displayName(): string | undefined {
+    return this.vdef.displayName;
   }
 
   takeDamage(amount: number) {
@@ -149,6 +186,14 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
         );
       }
       this.nextGroanAt = time + 3000 + Math.random() * 4000;
+    }
+
+    // Level 4 swimmers take a completely separate 2D movement path. Everything
+    // below is the grounded land-zombie logic and never runs for them, so land
+    // zombies (movement undefined/'ground') stay bit-identical.
+    if (this.vdef.movement === 'swim') {
+      this.swimUpdate(time, delta);
+      return;
     }
 
     switch (this.state_) {
@@ -239,6 +284,15 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
     this.play(Math.abs(body.velocity.x) > 5 ? this.anims_.walk : this.anims_.idle, true);
   }
 
+  // Swim variants move in 2D, so the walk/idle decision uses total speed — a
+  // straight-up/down chase has near-zero velocity.x and would otherwise freeze
+  // the swimmer into its idle pose while it visibly moves toward the player.
+  private updateSwimAnim(body: Phaser.Physics.Arcade.Body) {
+    if (this.anims.currentAnim?.key === this.anims_.hurt && this.anims.isPlaying) return;
+    const moving = Math.hypot(body.velocity.x, body.velocity.y) > 5;
+    this.play(moving ? this.anims_.walk : this.anims_.idle, true);
+  }
+
   private tryFailedJump(time: number) {
     if (time - this.lastJumpAttempt < ZOMBIE.jumpFailIntervalMs) return;
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -261,6 +315,134 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
     }
     this.setVelocityX(this.patrolDirection * this.vdef.patrolSpeed);
     this.setFlipX(this.patrolDirection < 0);
+  }
+
+  // ── Swim movement (Level 4 'drowned') ─────────────────────────────────────
+  // Neutral-buoyancy 2D swimmer: direct-velocity diagonal chase, gentle bob on
+  // patrol, and a dodgeable telegraph burst that fires along the 2D vector to
+  // the player (no ground/`blocked.down` gate — there is no floor underwater).
+  // Reuses the WINDUP/LUNGE/RECOVER states + timings and the shared state fields
+  // (`state_`/`stateUntil`/`nextLungeAt`/`windupTween`) so takeDamage's
+  // windup-interrupt logic still works.
+  private swimUpdate(time: number, delta: number) {
+    this.swimMove(time, delta);
+    // Containment is the LAST word before the physics step. The chase/lunge
+    // states can aim upward at a player near the surface, so clamping AFTER
+    // them (not before) keeps the drowned pinned just below the surface line
+    // instead of zeroing a velocity the state machine immediately re-applies.
+    this.containBelowSurface(this.body as Phaser.Physics.Arcade.Body);
+  }
+
+  private swimMove(time: number, delta: number) {
+    const body = this.body as Phaser.Physics.Arcade.Body;
+
+    switch (this.state_) {
+      case ZombieState.WINDUP:
+        this.setVelocity(0, 0);
+        if (time >= this.stateUntil) {
+          this.state_ = ZombieState.LUNGE;
+          this.stateUntil = time + ZOMBIE.lungeMs;
+          // Burst toward the player along the 2D vector captured right now.
+          const tx = this.target?.x ?? this.x;
+          const ty = this.target?.y ?? this.y;
+          const ang = Math.atan2(ty - this.y, tx - this.x);
+          this.setVelocity(Math.cos(ang) * ZOMBIE.lungeSpeed, Math.sin(ang) * ZOMBIE.lungeSpeed);
+          this.setFlipX(tx < this.x);
+          this.play(this.anims_.attack, true);
+        }
+        return;
+      case ZombieState.LUNGE:
+        if (time >= this.stateUntil) {
+          this.state_ = ZombieState.RECOVER;
+          this.stateUntil = time + ZOMBIE.lungeRecoverMs;
+        }
+        return;
+      case ZombieState.RECOVER:
+        // Coast on the leftover burst velocity; no ground zeroing underwater.
+        if (time >= this.stateUntil) this.state_ = ZombieState.CHASE;
+        return;
+      default:
+        break;
+    }
+
+    if (!this.target) {
+      this.swimPatrol(time, delta);
+      this.updateSwimAnim(body);
+      return;
+    }
+
+    const dist = Phaser.Math.Distance.BetweenPoints(this, this.target);
+    const aggro =
+      this.state_ === ZombieState.CHASE ? dist < ZOMBIE.deaggroRange : dist < ZOMBIE.aggroRange;
+
+    if (!aggro) {
+      this.state_ = ZombieState.PATROL;
+      this.swimPatrol(time, delta);
+      this.updateSwimAnim(body);
+      return;
+    }
+
+    this.state_ = ZombieState.CHASE;
+    const dx = this.target.x - this.x;
+    const dy = this.target.y - this.y;
+
+    if (dist < ZOMBIE.lungeRange && time >= this.nextLungeAt) {
+      // Telegraphed dodgeable burst — crouch-flash windup, then a 2D lunge.
+      this.state_ = ZombieState.WINDUP;
+      this.stateUntil = time + ZOMBIE.lungeWindupMs;
+      this.nextLungeAt = time + ZOMBIE.lungeCooldownMs;
+      this.setVelocity(0, 0);
+      this.setFlipX(dx < 0);
+      flashSprite(this, 0xff8866, ZOMBIE.lungeWindupMs - 60, this.vdef.tint);
+      this.windupTween = this.scene.tweens.add({
+        targets: this,
+        scaleY: this.vdef.scale * 0.92,
+        scaleX: this.vdef.scale * 1.06,
+        duration: ZOMBIE.lungeWindupMs - 60,
+        yoyo: true,
+        onComplete: () => {
+          this.windupTween = null;
+          this.setScale(this.vdef.scale);
+        },
+      });
+    } else {
+      // Direct-velocity 2D chase: swim straight at the player, any direction.
+      const len = Math.hypot(dx, dy) || 1;
+      this.setVelocity((dx / len) * this.vdef.chaseSpeed, (dy / len) * this.vdef.chaseSpeed);
+      this.setFlipX(dx < 0);
+      this.updateSwimAnim(body);
+    }
+  }
+
+  private swimPatrol(time: number, delta: number) {
+    this.patrolTimer += delta;
+    if (this.patrolTimer >= 2000) {
+      this.patrolDirection *= -1;
+      this.patrolTimer = 0;
+    }
+    this.setVelocityX(this.patrolDirection * this.vdef.patrolSpeed);
+    // Gentle vertical bob around neutral so it hovers rather than drifting off.
+    let vy = Math.sin(time / 500) * 18;
+    // A de-aggroed drowned that had chased the player up to the surface sinks
+    // back toward a rest depth instead of stranding hovering at the top (L4).
+    if (this.swimSurfaceY !== undefined) {
+      const restY = this.swimSurfaceY + DROWNED_REST_DEPTH;
+      if (this.y < restY - 8) vy += 45;
+    }
+    this.setVelocityY(vy);
+    this.setFlipX(this.patrolDirection < 0);
+  }
+
+  // Level 4 drowned containment: hold the body top below the surface so the
+  // ceiling-less swim chase can't breach the water and swim above it. No-op with
+  // no surface profile (Levels 1-3 never call setWaterProfile).
+  private containBelowSurface(body: Phaser.Physics.Arcade.Body) {
+    if (this.swimSurfaceY === undefined) return;
+    const minTop = this.swimSurfaceY + DROWNED_SUBMERGE_MARGIN;
+    if (body.top < minTop) {
+      this.y += minTop - body.top;
+      if (body.velocity.y < 0) this.setVelocityY(0);
+    }
   }
 
   private updateHealthBar() {

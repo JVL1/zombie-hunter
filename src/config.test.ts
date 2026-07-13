@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONSUMABLES, POWERUPS, SWORDS, ZOMBIE, type PowerUpType } from './config';
+import { CONSUMABLES, POWERUPS, SWORDS, WATER, ZOMBIE, type PowerUpType } from './config';
 import { ZombieAnims } from './assets';
 
 describe('zombie variant table', () => {
@@ -17,6 +17,13 @@ describe('zombie variant table', () => {
     expect(ZOMBIE.variants.zanter.scale).toBeGreaterThan(1.3);
     expect(ZOMBIE.variants.zanter.hp).toBeGreaterThan(ZOMBIE.variants.urban.hp);
   });
+
+  it('drowned variant swims', () => {
+    expect(ZOMBIE.variants.drowned.movement).toBe('swim');
+    // Land variants must stay grounded — swim behavior is gated on movement==='swim'.
+    expect(ZOMBIE.variants.zombie.movement).not.toBe('swim');
+    expect(ZOMBIE.variants.urban.movement).not.toBe('swim');
+  });
 });
 
 describe('power-monster variants', () => {
@@ -29,6 +36,14 @@ describe('power-monster variants', () => {
       expect(v.animSet, `${name} animSet`).toBeDefined();
       expect(v.bakeColor, `${name} bakeColor`).toBeDefined();
       expect(ZombieAnims[v.animSet!], `${name} anim set entry`).toBeDefined();
+    }
+  });
+
+  it('every power monster has a display name (Henry named them 2026-07-12)', () => {
+    for (const name of POWER_VARIANTS) {
+      const dn = ZOMBIE.variants[name].displayName;
+      expect(dn, `${name} displayName`).toBeDefined();
+      expect(dn!.length, `${name} displayName non-empty`).toBeGreaterThan(0);
     }
   });
 
@@ -87,5 +102,22 @@ describe('POWERUPS', () => {
       colors.add(powerup.color);
     }
     expect(colors.size).toBe(types.length);
+  });
+});
+
+describe('WATER', () => {
+  it('air lasts longer than the warning threshold', () => {
+    expect(WATER.airMs).toBeGreaterThan(WATER.warnAtMs);
+  });
+  it('drown tick cadence and damage are positive', () => {
+    expect(WATER.drownTickMs).toBeGreaterThan(0);
+    expect(WATER.drownTickDamage).toBeGreaterThan(0);
+  });
+  it('scuba takes 5 hits (Henry ruling)', () => {
+    expect(WATER.scubaDurability).toBe(5);
+  });
+  it('surface hysteresis is a small positive band', () => {
+    expect(WATER.surfaceHysteresisPx).toBeGreaterThan(0);
+    expect(WATER.surfaceHysteresisPx).toBeLessThan(20);
   });
 });
