@@ -138,13 +138,33 @@ function drawEel(ctx: CanvasRenderingContext2D, wave: (t: number) => number, mou
   ctx.fill();
 }
 
-// Drowned kraken head, 96x96 frame. `enraged` swaps amber eyes for glowing red
-// (baked, so it reads on Canvas); `pulse` 0..1 breathes the eye glow / mantle.
+// Kraken eye layout, frame-local offsets from the head center. Henry and Wes
+// gave the Beast 4 to 6 eyes: 4 when calm, and a forehead pair pops open when
+// it enrages. Exported so the eye count is test-covered.
+export interface KrakenEye {
+  dx: number;
+  dy: number;
+  r: number;
+}
+
+export function krakenEyes(enraged: boolean): KrakenEye[] {
+  const eyes: KrakenEye[] = [];
+  for (const dir of [-1, 1]) {
+    eyes.push({ dx: dir * 13, dy: 8, r: 6 }); // big main pair
+    eyes.push({ dx: dir * 21, dy: -8, r: 4.5 }); // upper side pair
+    if (enraged) eyes.push({ dx: dir * 7, dy: -22, r: 4 }); // forehead pair
+  }
+  return eyes;
+}
+
+// Drowned kraken head, 96x96 frame, toxic green. `enraged` swaps the
+// yellow-green eyes for glowing red and opens 2 more eyes (baked, so it reads
+// on Canvas); `pulse` 0..1 breathes the eye glow and the glowing slime spots.
 function drawKrakenHead(ctx: CanvasRenderingContext2D, enraged: boolean, pulse: number): void {
   const cx = 48;
   const cy = 44;
   // rising tentacle stubs behind the mantle
-  ctx.fillStyle = '#4a1230';
+  ctx.fillStyle = '#1f4a1c';
   for (const dir of [-1, 1]) {
     for (const off of [18, 30]) {
       ctx.beginPath();
@@ -157,23 +177,44 @@ function drawKrakenHead(ctx: CanvasRenderingContext2D, enraged: boolean, pulse: 
     }
   }
   // bulbous mantle
-  ctx.fillStyle = '#7a1f4a';
+  ctx.fillStyle = '#3f8a2a';
   ctx.beginPath();
   ctx.ellipse(cx, cy - 6, 30, 34, 0, 0, Math.PI * 2);
   ctx.fill();
+  // dark underside shading
+  ctx.fillStyle = '#2c6420';
+  ctx.beginPath();
+  ctx.ellipse(cx + 6, cy + 10, 22, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
   // wet highlight
-  ctx.fillStyle = '#9c2c60';
+  ctx.fillStyle = '#6cc244';
   ctx.beginPath();
   ctx.ellipse(cx - 8, cy - 18, 12, 16, 0, 0, Math.PI * 2);
   ctx.fill();
   // rot blotches
-  ctx.fillStyle = '#4c6b3a';
+  ctx.fillStyle = '#1c3d16';
   ctx.beginPath();
-  ctx.arc(cx + 14, cy - 2, 6, 0, Math.PI * 2);
-  ctx.arc(cx + 6, cy + 14, 5, 0, Math.PI * 2);
+  ctx.arc(cx + 16, cy - 14, 5, 0, Math.PI * 2);
+  ctx.arc(cx + 6, cy + 16, 4, 0, Math.PI * 2);
+  ctx.arc(cx - 20, cy + 14, 3, 0, Math.PI * 2);
   ctx.fill();
+  // glowing slime spots that breathe with the pulse
+  ctx.globalAlpha = 0.6 + pulse * 0.4;
+  ctx.fillStyle = enraged ? '#ffb13a' : '#c8ff5a';
+  for (const [sx, sy] of [
+    [cx + 22, cy - 26],
+    [cx - 24, cy - 10],
+    [cx + 26, cy + 4],
+    [cx - 14, cy - 34],
+    [cx + 10, cy - 36],
+  ]) {
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
   // brow ridge (angrier when enraged)
-  ctx.fillStyle = '#5a153a';
+  ctx.fillStyle = '#1c3d16';
   ctx.beginPath();
   const browDrop = enraged ? 6 : 2;
   ctx.moveTo(cx - 24, cy + browDrop);
@@ -185,43 +226,50 @@ function drawKrakenHead(ctx: CanvasRenderingContext2D, enraged: boolean, pulse: 
   ctx.lineTo(cx - 20, cy + browDrop + 4);
   ctx.closePath();
   ctx.fill();
-  // eyes — baked color per phase
-  const eyeGlow = enraged ? '#ff2a1a' : '#f2d23a';
-  const eyeCore = enraged ? '#ffe6a0' : '#fff4c0';
-  const glowR = 9 + pulse * (enraged ? 4 : 2);
-  for (const dir of [-1, 1]) {
-    const ex = cx + dir * 13;
-    const ey = cy + 8;
+  // eyes — baked color per phase, dark green slit pupils (Wes's call)
+  const eyeGlow = enraged ? '#ff2a1a' : '#d8ff3a';
+  const eyeCore = enraged ? '#ffe6a0' : '#ffffe0';
+  for (const eye of krakenEyes(enraged)) {
+    const ex = cx + eye.dx;
+    const ey = cy + eye.dy;
+    const s = eye.r / 6;
+    // dark socket rim so each eye pops off the green skin
+    ctx.fillStyle = '#10260d';
+    ctx.beginPath();
+    ctx.arc(ex, ey, eye.r + 1.5, 0, Math.PI * 2);
+    ctx.fill();
     // outer glow
     ctx.globalAlpha = enraged ? 0.5 : 0.3;
     ctx.fillStyle = eyeGlow;
     ctx.beginPath();
-    ctx.arc(ex, ey, glowR, 0, Math.PI * 2);
+    ctx.arc(ex, ey, (9 + pulse * (enraged ? 4 : 2)) * s, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
     // iris
     ctx.fillStyle = eyeGlow;
     ctx.beginPath();
-    ctx.arc(ex, ey, 6, 0, Math.PI * 2);
+    ctx.arc(ex, ey, eye.r, 0, Math.PI * 2);
     ctx.fill();
     // slit pupil
-    ctx.fillStyle = '#160606';
-    ctx.fillRect(ex - 1, ey - 5, 2, 10);
+    ctx.fillStyle = '#0f3a12';
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, 1.3 * s + 0.3, eye.r - 1, 0, 0, Math.PI * 2);
+    ctx.fill();
     // core spark
     ctx.fillStyle = eyeCore;
     ctx.beginPath();
-    ctx.arc(ex - 2, ey - 2, 1.6, 0, Math.PI * 2);
+    ctx.arc(ex - 2 * s, ey - 2 * s, 1.6 * s, 0, Math.PI * 2);
     ctx.fill();
   }
   // hooked beak
-  ctx.fillStyle = '#1c0e12';
+  ctx.fillStyle = '#14200f';
   ctx.beginPath();
   ctx.moveTo(cx - 8, cy + 22);
   ctx.lineTo(cx + 8, cy + 22);
   ctx.lineTo(cx, cy + 34);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = '#3a2028';
+  ctx.fillStyle = '#2e3a1a';
   ctx.fillRect(cx - 2, cy + 22, 4, 6);
 }
 
@@ -336,14 +384,14 @@ export function generateLakeTextures(scene: Phaser.Scene): void {
   g.generateTexture(Assets.LASER_BUBBLE, 16, 16);
   g.clear();
 
-  // --- Tentacle segment (28x28): suckered red-purple arm chunk, tileable ---
-  g.fillStyle(0x7a1f4a, 1);
+  // --- Tentacle segment (28x28): suckered toxic-green arm chunk, tileable ---
+  g.fillStyle(0x3f8a2a, 1);
   g.fillRoundedRect(2, 4, 24, 20, 8);
-  g.fillStyle(0x9c2c60, 1); // top-lit ridge
+  g.fillStyle(0x6cc244, 1); // top-lit ridge
   g.fillRoundedRect(4, 5, 20, 6, 4);
-  g.fillStyle(0x4a1230, 1); // underside shadow
+  g.fillStyle(0x1f4a1c, 1); // underside shadow
   g.fillRoundedRect(4, 18, 20, 5, 4);
-  g.fillStyle(0xc65a88, 1); // suckers
+  g.fillStyle(0xb8e07a, 1); // suckers
   for (const [sx, sy] of [
     [9, 12],
     [16, 10],
@@ -351,9 +399,9 @@ export function generateLakeTextures(scene: Phaser.Scene): void {
     [13, 17],
   ] as const) {
     g.fillCircle(sx, sy, 2.4);
-    g.fillStyle(0x5a153a, 1);
+    g.fillStyle(0x1c3d16, 1);
     g.fillCircle(sx, sy, 1);
-    g.fillStyle(0xc65a88, 1);
+    g.fillStyle(0xb8e07a, 1);
   }
   g.generateTexture(Assets.TENTACLE_SEGMENT, 28, 28);
   g.clear();
@@ -424,13 +472,13 @@ export function generateLakeTextures(scene: Phaser.Scene): void {
     (ctx) => drawEel(ctx, (t) => Math.sin(t * Math.PI) * 2, 1),
   ]);
 
-  // Kraken head: 2-frame idle bob (amber eyes), 96x96.
+  // Kraken head: 2-frame idle bob (4 yellow-green eyes), 96x96.
   makeSheet(scene, Assets.KRAKEN_HEAD, 96, 96, [
     (ctx) => drawKrakenHead(ctx, false, 0),
     (ctx) => drawKrakenHead(ctx, false, 1),
   ]);
 
-  // Kraken head ENRAGED: 2-frame pulse, red glowing eyes BAKED into the frames
+  // Kraken head ENRAGED: 2-frame pulse, 6 red glowing eyes BAKED into the frames
   // (Canvas-visible — never relies on setTint).
   makeSheet(scene, Assets.KRAKEN_HEAD_ENRAGED, 96, 96, [
     (ctx) => drawKrakenHead(ctx, true, 0.3),
