@@ -206,6 +206,13 @@ export class GameState {
     this.save();
   }
 
+  // `?level=N` shortcut: unlock up to N (never lowers the unlock) and select it.
+  jumpToLevel(n: number) {
+    this.currentLevel = Math.min(Math.max(n, 1), LEVELS.length);
+    this.maxUnlockedLevel = Math.max(this.maxUnlockedLevel, this.currentLevel);
+    this.save();
+  }
+
   get currentLevelDef(): LevelDef {
     return levelByNumber(this.currentLevel);
   }

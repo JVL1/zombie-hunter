@@ -9,6 +9,8 @@ import { generateRailTextures } from '../art/rail';
 import { generateShopTextures } from '../art/shop';
 import { Assets, PlayerAnims } from '../assets';
 import { GAME_H, GAME_W } from '../config';
+import { GameState } from '../core/GameState';
+import { levelByNumber, levelFromQuery } from '../levels';
 
 // Loads the real pixel-art sprites and procedurally generates every other
 // texture: night sky, moon, tiles, throne of crushed cars, pickups, particles.
@@ -106,6 +108,13 @@ export class PreloadScene extends Phaser.Scene {
     bakeTint(this, Assets.RUIN_BG_2, Assets.LAKE_NIGHT_FAR, '#5a2226');
     bakeTint(this, Assets.RUIN_BG_3, Assets.LAKE_NIGHT_MID, '#401a1e');
     bakeTint(this, Assets.RUIN_BG_4, Assets.LAKE_NIGHT_NEAR, '#2c1214');
+    // `?level=N` skips the menu and drops straight into level N
+    const skipTo = levelFromQuery(window.location.search);
+    if (skipTo !== null) {
+      GameState.getInstance().jumpToLevel(skipTo);
+      this.scene.start(levelByNumber(skipTo).sceneKey);
+      return;
+    }
     this.scene.start('MainMenu');
   }
 

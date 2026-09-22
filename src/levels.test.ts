@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LEVELS, TRAIN, levelByNumber } from './levels';
+import { LEVELS, TRAIN, levelByNumber, levelFromQuery } from './levels';
 import { POWERUPS, WORLD, ZOMBIE } from './config';
 
 interface Rect {
@@ -196,6 +196,17 @@ describe('level registry integrity', () => {
   it('levelByNumber clamps out-of-range', () => {
     expect(levelByNumber(0)).toBe(LEVELS[0]);
     expect(levelByNumber(99)).toBe(LEVELS[LEVELS.length - 1]);
+  });
+
+  it('levelFromQuery reads ?level=N for built levels only', () => {
+    expect(levelFromQuery('?level=3')).toBe(3);
+    expect(levelFromQuery('?foo=1&level=2')).toBe(2);
+    expect(levelFromQuery(`?level=${LEVELS.length}`)).toBe(LEVELS.length);
+    expect(levelFromQuery('')).toBeNull();
+    expect(levelFromQuery('?level=0')).toBeNull();
+    expect(levelFromQuery(`?level=${LEVELS.length + 1}`)).toBeNull();
+    expect(levelFromQuery('?level=2.5')).toBeNull();
+    expect(levelFromQuery('?level=abc')).toBeNull();
   });
 
   it('boss defs are internally sane', () => {
