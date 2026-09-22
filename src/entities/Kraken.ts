@@ -108,7 +108,8 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
     this.bodiesCache = [this.body as Phaser.Physics.Arcade.Body, ...this.tentacles.map((t) => t.body as Phaser.Physics.Arcade.Body)];
 
     if (scene.sys.renderer.type === Phaser.WEBGL) {
-      this.headLight = scene.lights.addLight(x, y, 320, 0x33ffcc, 0.8);
+      // Toxic green to match the green body, so Light2D keeps the skin vivid.
+      this.headLight = scene.lights.addLight(x, y, 320, 0x88ff66, 0.8);
     }
 
     this.bubbles = scene.physics.add.group({ allowGravity: false, maxSize: BUBBLE_MAX });
@@ -288,11 +289,11 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
     this.enrageApplied = true;
     this.setTexture(Assets.KRAKEN_HEAD_ENRAGED);
     this.play(LakeAnims.KRAKEN_ENRAGED, true);
-    // Swing the head light from its calm cyan to an angry red-orange. Light2D
-    // multiplies the diffuse texture, so the resting cyan light was desaturating
-    // the baked red eyes into muddy amber — recoloring it here makes the enraged
-    // "red-eyed and mad" cue actually read on WebGL (a no-op on Canvas: null light).
-    this.headLight?.setColor(0xff4422).setIntensity(1.1);
+    // Swing the head light from its calm green to an angry orange. Light2D
+    // multiplies the diffuse texture: the green light would mute the baked red
+    // eyes, and a pure red light would crush the green skin to black. Orange
+    // keeps the eyes red and the skin a dark olive (a no-op on Canvas: null light).
+    this.headLight?.setColor(0xffaa55).setIntensity(1.1);
     SynthAudio.roar();
     this.juice.shake(0.008, 500);
     this.juice.zoomPunch(0.08, 300);
