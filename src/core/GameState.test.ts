@@ -264,6 +264,25 @@ describe('level progression', () => {
     expect(gs.currentLevel).toBe(1);
   });
 
+  it('jumpToLevel unlocks and selects the level, and persists it', () => {
+    gs.jumpToLevel(3);
+    expect(gs.currentLevel).toBe(3);
+    expect(gs.maxUnlockedLevel).toBe(3);
+    const fresh = new (GameState as any)();
+    fresh.load();
+    expect(fresh.currentLevel).toBe(3);
+    expect(fresh.maxUnlockedLevel).toBe(3);
+  });
+
+  it('jumpToLevel never lowers the unlock and clamps to built levels', () => {
+    gs.maxUnlockedLevel = LEVELS.length;
+    gs.jumpToLevel(1);
+    expect(gs.currentLevel).toBe(1);
+    expect(gs.maxUnlockedLevel).toBe(LEVELS.length);
+    gs.jumpToLevel(99);
+    expect(gs.currentLevel).toBe(LEVELS.length);
+  });
+
   it('legacy saves default maxUnlockedLevel to currentLevel', () => {
     localStorage.setItem(
       SAVE_KEY,

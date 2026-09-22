@@ -48,6 +48,7 @@ Victory routes through `ShopScene` whenever the level's `nextSceneKey` isn't `'M
 - **Boss cinematic**: letterbox bars + camera pan + world/camera bounds locked to the arena; surviving zombies destroyed before bounds shrink, uncollected power orbs magnetize to the player first (never stranded), and active buff expiries slide forward every frozen frame (`extendBuffs(delta, now)` — continuous, so giant/aura effects never flicker mid-cutscene).
 - **Power monsters & buffs**: `ZOMBIE.variants` entries with a `powerUp` use color-baked sprite sheets (Canvas-safe); killing one drops a buff orb (`Pickup` kind `'orb'`); collecting grants a ~10s buff (flight / mega damage / giant ×1.35 with feet-planted body math / invincibility) with a glow aura on the player and a draining countdown slot in the HUD. Buffs clear on revive and on retry.
 - **Shop & damage pipeline**: all purchase rules live in `GameState` (data from `SWORDS`/`CONSUMABLES` in config.ts); all hit resolution goes through pure `resolveDamage` in `src/core/damage.ts` — never hand-roll shield/potion/revive logic in entity code. Extra Life revives in place at the last grounded spot (clamped to current physics bounds, so boss-arena revives stay inside).
+- **Skip to a level**: `?level=N` (e.g. `/?level=4`) skips the menu, unlocks up to N in the save (`GameState.jumpToLevel`), and starts level N. Invalid or unbuilt N falls back to the menu.
 - **Testing hook**: `window.game` is exposed; playtest by dispatching synthetic KeyboardEvents and inspecting scene objects via `agent-browser eval`.
 
 ### Controls

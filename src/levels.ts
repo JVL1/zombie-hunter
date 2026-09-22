@@ -413,3 +413,11 @@ export function levelByNumber(n: number): LevelDef {
   if (!Number.isFinite(n)) n = 1;
   return LEVELS[Math.min(Math.max(Math.floor(n), 1), LEVELS.length) - 1];
 }
+
+// `?level=N` skip-to-level shortcut. Returns null unless N is a built level.
+export function levelFromQuery(search: string): number | null {
+  const raw = new URLSearchParams(search).get('level');
+  if (raw === null || !/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  return n >= 1 && n <= LEVELS.length ? n : null;
+}
