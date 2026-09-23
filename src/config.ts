@@ -180,7 +180,11 @@ export const CANDY = {
   bounceVelocity: -780,       // ~304px apex
   slamBounceVelocity: -900,   // slam onto a pad = pogo bonus (~405px apex)
   maxFallVelocity: 900,       // matches Player.setMaxVelocity's y cap
+  marshmallowW: 64,           // pad body size (the baked texture matches)
+  marshmallowH: 28,
   gummy: {
+    bodyW: 30,
+    bodyH: 32,
     hp: 40,
     cubHp: 14,
     cubScale: 0.6,
@@ -193,6 +197,8 @@ export const CANDY = {
     cubHopIntervalMs: 520,
   },
   gumball: {
+    bodyW: 32,
+    bodyH: 32,
     hp: 50,
     contactDamage: 12,
     patrolSpeed: 40,
@@ -203,6 +209,8 @@ export const CANDY = {
     rollCooldownMs: 1400,
   },
   chocolate: {
+    bodyW: 30,
+    bodyH: 54,
     hp: 55,
     contactDamage: 10,
     walkSpeed: 60,

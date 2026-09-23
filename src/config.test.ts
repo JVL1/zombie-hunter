@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONSUMABLES, POWERUPS, SWORDS, WATER, ZOMBIE, type PowerUpType } from './config';
+import { CANDY, CONSUMABLES, PLAYER, POWERUPS, SWORDS, WATER, ZOMBIE, type PowerUpType } from './config';
 import { ZombieAnims } from './assets';
 
 describe('zombie variant table', () => {
@@ -102,6 +102,38 @@ describe('POWERUPS', () => {
       colors.add(powerup.color);
     }
     expect(colors.size).toBe(types.length);
+  });
+});
+
+describe('CANDY (Wes, Level 5)', () => {
+  const g = 1000; // main.ts arcade gravity
+  const apex = (v: number) => (v * v) / (2 * g);
+
+  it('a marshmallow bounce goes higher than a double jump', () => {
+    expect(apex(CANDY.bounceVelocity)).toBeGreaterThan(2 * apex(PLAYER.jumpVelocity));
+  });
+  it('a slam onto a pad bounces higher than a plain bounce, inside the fall cap', () => {
+    expect(Math.abs(CANDY.slamBounceVelocity)).toBeGreaterThan(Math.abs(CANDY.bounceVelocity));
+    expect(Math.abs(CANDY.slamBounceVelocity)).toBeLessThanOrEqual(CANDY.maxFallVelocity);
+    // Even the slam bounce stays on screen (world height 540, ground 476)
+    expect(apex(CANDY.slamBounceVelocity)).toBeLessThan(476 - 40);
+  });
+  it('the player can hold a few sour candies', () => {
+    expect(CANDY.sourCandyCap).toBeGreaterThanOrEqual(1);
+    expect(CANDY.sourCandyCap).toBeLessThanOrEqual(5);
+  });
+  it('gummy cubs are smaller and weaker than gummy bears', () => {
+    expect(CANDY.gummy.cubScale).toBeLessThan(1);
+    expect(CANDY.gummy.cubHp).toBeLessThan(CANDY.gummy.hp);
+    expect(CANDY.gummy.cubContactDamage).toBeLessThan(CANDY.gummy.contactDamage);
+  });
+  it('the gumball shake is a readable warning, and the roll is fast', () => {
+    expect(CANDY.gumball.shakeMs).toBeGreaterThanOrEqual(300);
+    expect(CANDY.gumball.rollSpeed).toBeGreaterThan(PLAYER.maxRun);
+  });
+  it('a chocolate puddle always reforms', () => {
+    expect(CANDY.chocolate.puddleMaxMs).toBeGreaterThan(0);
+    expect(CANDY.chocolate.meltCooldownMs).toBeGreaterThan(CANDY.chocolate.puddleMaxMs);
   });
 });
 

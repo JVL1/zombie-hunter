@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LEVELS, TRAIN, levelByNumber, levelFromQuery } from './levels';
-import { POWERUPS, WORLD, ZOMBIE } from './config';
+import { LEVELS, TRAIN, levelByNumber, levelFromQuery, type CandyEnemyKind } from './levels';
+import { CANDY, POWERUPS, WORLD, ZOMBIE } from './config';
 
 interface Rect {
   left: number;
@@ -226,6 +226,21 @@ describe('level registry integrity', () => {
           // Summons must be breathers between waves, not a continuous flood
           expect(b.summon.intervalMs).toBeGreaterThan(b.attackIntervalMs);
         }
+      } else if (b.kind === 'worm') {
+        expect(b.enragedBurrowSpeed).toBeGreaterThanOrEqual(b.burrowSpeed);
+        expect(b.enragedUnderMs).toBeLessThanOrEqual(b.underMs);
+        expect(b.enragedShakeMs).toBeLessThanOrEqual(b.shakeMs);
+        // The shake must stay a readable warning even when enraged
+        expect(b.enragedShakeMs).toBeGreaterThanOrEqual(500);
+        expect(b.chipDamageRatio).toBeGreaterThan(0);
+        expect(b.chipDamageRatio).toBeLessThan(1);
+        expect(b.dizzyDamageMultiplier).toBeGreaterThanOrEqual(1);
+        // A 5-year-old needs time to land hits on a dizzy King
+        expect(b.dizzyMs).toBeGreaterThanOrEqual(2500);
+        // At least two chances to feed him per pop-up
+        expect(b.exposedMs).toBeGreaterThanOrEqual(2 * (b.mouthOpenMs + b.chompMs + b.mouthClosedMs));
+        expect(b.summon.count).toBeGreaterThan(0);
+        expect(b.summon.maxAlive).toBeGreaterThanOrEqual(b.summon.count);
       } else if (b.kind === 'kraken') {
         expect(b.tentacles).toBeGreaterThanOrEqual(2);
         expect(b.tentacles).toBeLessThanOrEqual(3);
@@ -291,6 +306,105 @@ describe('water levels', () => {
         }
       }
     }
+  });
+});
+
+describe('candy levels (Wes)', () => {
+  const candyLevels = LEVELS.filter((def) => def.candy !== undefined);
+
+  const padRect = (pad: { x: number; y: number }): Rect => ({
+    left: pad.x - CANDY.marshmallowW / 2,
+    right: pad.x + CANDY.marshmallowW / 2,
+    top: pad.y,
+    bottom: pad.y + CANDY.marshmallowH,
+  });
+
+  // Candy enemy body at rest, feet on the ground.
+  const candyRestRect = (e: { kind: CandyEnemyKind; x: number }): Rect => {
+    const { bodyW, bodyH } = CANDY[e.kind];
+    return { left: e.x - bodyW / 2, right: e.x + bodyW / 2, top: WORLD.groundY - bodyH, bottom: WORLD.groundY };
+  };
+
+  it('includes at least one candy level', () => {
+    expect(candyLevels.length).toBeGreaterThan(0);
+  });
+
+  it('marshmallows sit in bounds, on the ground, and clear of every solid', () => {
+    for (const def of candyLevels) {
+      const solids = [...platformRects(def), ...stairRects(def)];
+      for (const pad of def.candy!.marshmallows) {
+        const r = padRect(pad);
+        expect(r.left).toBeGreaterThan(0);
+        expect(r.right).toBeLessThan(def.worldWidth);
+        // Resting on the ground: pad bottom == ground top
+        expect(r.bottom).toBe(WORLD.groundY);
+        for (const solid of solids) {
+          expect(overlaps(r, solid), `pad@${pad.x} overlaps a solid`).toBe(false);
+        }
+      }
+      // Pads never overlap each other
+      const pads = def.candy!.marshmallows.map(padRect);
+      for (let i = 0; i < pads.length; i++) {
+        for (let j = i + 1; j < pads.length; j++) expect(overlaps(pads[i], pads[j])).toBe(false);
+      }
+    }
+  });
+
+  it('a bounce lands the player on each high wafer bar that a double jump cannot reach', () => {
+    const g = 1000; // main.ts arcade gravity
+    const bounceApex = CANDY.bounceVelocity ** 2 / (2 * g);
+    for (const def of candyLevels) {
+      for (const [x, y, count] of def.platforms) {
+        const barTop = y - 8;
+        const feetNeeded = WORLD.groundY - barTop;
+        if (feetNeeded <= 200) continue; // a double jump handles it
+        const barLeft = x;
+        const barRight = x + count * 32;
+        const helper = def.candy!.marshmallows.some(
+          (pad) => pad.x > barLeft - 140 && pad.x < barRight + 140 && pad.y - bounceApex < barTop - 20
+        );
+        expect(helper, `L${def.levelNumber} bar@${x} has no marshmallow in reach`).toBe(true);
+      }
+    }
+  });
+
+  it('candy enemies spawn in bounds, away from the player, before the boss, and clear of solids', () => {
+    for (const def of candyLevels) {
+      const solids = [...platformRects(def), ...stairRects(def), ...def.candy!.marshmallows.map(padRect)];
+      for (const e of def.candy!.enemies) {
+        expect(e.x - def.playerSpawnX).toBeGreaterThanOrEqual(350);
+        expect(e.x).toBeLessThan(def.triggerX - 150);
+        const r = candyRestRect(e);
+        for (const solid of solids) {
+          expect(overlaps(r, solid), `${e.kind}@${e.x} overlaps a solid`).toBe(false);
+        }
+      }
+      // Wes picked all three enemy kinds — each must show up
+      const kinds = new Set(def.candy!.enemies.map((e) => e.kind));
+      expect([...kinds].sort()).toEqual(['chocolate', 'gumball', 'gummy']);
+    }
+  });
+
+  it('power monsters on candy levels rest clear of the marshmallows', () => {
+    for (const def of candyLevels) {
+      const pads = def.candy!.marshmallows.map(padRect);
+      for (const spawn of def.zombieSpawns) {
+        if (spawn.y !== undefined) continue;
+        const r = restingBodyRect(spawn);
+        for (const pad of pads) expect(overlaps(r, pad)).toBe(false);
+      }
+    }
+  });
+
+  it('the portal stands inside the boss arena', () => {
+    for (const def of LEVELS) {
+      if (!def.portal) continue;
+      expect(def.portal.x).toBeGreaterThan(def.arenaLeft + 40);
+      expect(def.portal.x).toBeLessThan(def.worldWidth - 40);
+    }
+    // The 5-key portal belongs to the level that grants key #5
+    const portalLevels = LEVELS.filter((d) => d.portal);
+    expect(portalLevels.map((d) => d.keyIndex)).toEqual([4]);
   });
 });
 
