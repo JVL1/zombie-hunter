@@ -44,7 +44,30 @@ export interface KrakenBossDef extends BossBase {
   enragedSpreadCount: number; // aimed bubbles per volley once enraged (>= 3)
 }
 
-export type BossDef = WalkerBossDef | KrakenBossDef;
+// THE GUMMY WORM KING (Level 5, Wes's boss). He digs under the ground, shakes
+// it, pops up to chomp, and gets dizzy when he eats a sour candy.
+export interface WormBossDef extends BossBase {
+  kind: 'worm';
+  burrowSpeed: number; // px/s the dirt mound slides toward the player
+  enragedBurrowSpeed: number;
+  underMs: number; // time under the ground before the shake
+  enragedUnderMs: number;
+  shakeMs: number; // ground-shake warning before the pop-up
+  enragedShakeMs: number;
+  popMs: number; // the eruption (hurts on contact)
+  exposedMs: number; // time above the ground before he digs again
+  mouthOpenMs: number; // mouth-open part of each chomp cycle (feed window)
+  mouthClosedMs: number; // mouth-closed part of each chomp cycle
+  chompMs: number; // the snap at the end of each open phase (hurts on contact)
+  dizzyMs: number; // damage window after a sour candy
+  digMs: number; // dig-down animation time
+  chipDamageRatio: number; // share of damage a hit does when he is NOT dizzy
+  dizzyDamageMultiplier: number;
+  candyKnockCooldownMs: number;
+  summon: { count: number; maxAlive: number; intervalMs: number }; // gummy cubs, enraged only
+}
+
+export type BossDef = WalkerBossDef | KrakenBossDef | WormBossDef;
 
 export interface WaterDef {
   surfaceY: number;
@@ -52,6 +75,15 @@ export interface WaterDef {
   scuba: { x: number; y: number };
   fishSchools: Array<{ x: number; y: number; count: number }>;
   eels: Array<{ x: number; y: number }>;
+}
+
+// Level 5 candy enemies (Wes picked all three). Default y = on the ground.
+export type CandyEnemyKind = 'gummy' | 'gumball' | 'chocolate';
+
+export interface CandyDef {
+  // Marshmallow bounce pads. x = center, y = TOP surface of the pad.
+  marshmallows: Array<{ x: number; y: number }>;
+  enemies: Array<{ kind: CandyEnemyKind; x: number }>;
 }
 
 export interface LevelDef {
@@ -76,6 +108,10 @@ export interface LevelDef {
   zombieSpawns: ZombieSpawn[];
   boss: BossDef;
   water?: WaterDef;
+  candy?: CandyDef;
+  // The 5-key portal (Level 5): opens in the arena after the boss key is taken;
+  // walking into it ends the level.
+  portal?: { x: number };
   bossSpawnX: number;
   triggerX: number; // player x that starts the boss cinematic
   arenaLeft: number; // world/camera bounds lock during boss fight
@@ -319,7 +355,7 @@ const levelFour: LevelDef = {
   levelNumber: 4,
   name: 'THE ZOMBIFIED LAKE',
   victorySubtitle: 'The Sunken Beast sinks for good',
-  nextSceneKey: 'MainMenu',
+  nextSceneKey: 'Level5',
   keyIndex: 3,
   worldWidth: 3400,
   playerSpawnX: 100,
@@ -407,7 +443,108 @@ const levelFour: LevelDef = {
   arenaLeft: 2860,
 };
 
-export const LEVELS: LevelDef[] = [levelOne, levelTwo, levelThree, levelFour];
+// Level 5 — THE SUGAR RUSH ZONE. Wes (5) designed it on 2026-09-22: a rotten
+// candy world, gummy bear / gumball / chocolate zombies, bouncy marshmallows,
+// and the Gummy Worm King, who gets dizzy when you feed him a sour candy.
+// Beating him gives key #5 and opens the portal to the underworld.
+const levelFive: LevelDef = {
+  sceneKey: 'Level5',
+  levelNumber: 5,
+  name: 'THE SUGAR RUSH ZONE',
+  victorySubtitle: 'The portal to the underworld is open',
+  nextSceneKey: 'MainMenu',
+  keyIndex: 4,
+  worldWidth: 3960,
+  playerSpawnX: 100,
+  // Candy-pink dusk, brighter than the other levels so the candy colors (and
+  // the enemies away from the lollipop lights) read on WebGL.
+  ambientColor: 0x8a7898,
+  parallax: [
+    { key: Assets.CANDY_NIGHT_FAR, factor: 0.12 },
+    { key: Assets.CANDY_NIGHT_MID, factor: 0.3 },
+    { key: Assets.CANDY_NIGHT_NEAR, factor: 0.55 },
+  ],
+  textures: {
+    groundTop: Assets.CANDY_GROUND_TOP,
+    groundFill: Assets.CANDY_GROUND_FILL,
+    platform: Assets.CANDY_PLATFORM,
+    stone: Assets.CANDY_STONE,
+  },
+  // Wafer bars. The two high bars (y 200 / 190) sit above double-jump height
+  // from the ground — a marshmallow next to each one bounces you up there.
+  platforms: [
+    [400, 380, 4],
+    [900, 310, 5],
+    [1400, 200, 5],
+    [1900, 360, 4],
+    [2400, 190, 5],
+    [2750, 370, 4],
+  ],
+  stairs: [
+    [640, 408, 4, 38, 50],
+    [1700, 410, 4, 40, 48],
+  ],
+  // Power monsters only — the candy enemies live in `candy.enemies`.
+  zombieSpawns: [
+    { x: 1620, variant: 'vulture' }, // flight + marshmallows = sky high
+    { x: 2250, variant: 'rage' }, // clear of the x=2330 marshmallow
+  ],
+  candy: {
+    marshmallows: [
+      { x: 820, y: 448 },
+      { x: 1330, y: 448 },
+      { x: 2080, y: 448 },
+      { x: 2330, y: 448 },
+      { x: 3240, y: 448 }, // in the arena: hop over the King's pop-ups
+    ],
+    enemies: [
+      { kind: 'gummy', x: 520 },
+      { kind: 'gumball', x: 760 },
+      { kind: 'gummy', x: 1000 },
+      { kind: 'chocolate', x: 1180 },
+      { kind: 'gumball', x: 1480 },
+      { kind: 'gummy', x: 1780 },
+      { kind: 'gummy', x: 1830 },
+      { kind: 'chocolate', x: 1990 },
+      { kind: 'gumball', x: 2200 },
+      { kind: 'gummy', x: 2520 },
+      { kind: 'chocolate', x: 2620 },
+      { kind: 'gumball', x: 2900 },
+    ],
+  },
+  boss: {
+    kind: 'worm',
+    name: 'GUMMY WORM KING',
+    hp: 300,
+    scale: 1.6,
+    contactDamage: 16,
+    burrowSpeed: 150,
+    enragedBurrowSpeed: 230,
+    underMs: 1800,
+    enragedUnderMs: 1200,
+    shakeMs: 1100,
+    enragedShakeMs: 700,
+    popMs: 450,
+    exposedMs: 5200,
+    mouthOpenMs: 1300,
+    mouthClosedMs: 700,
+    chompMs: 250,
+    dizzyMs: 3500,
+    digMs: 500,
+    chipDamageRatio: 0.25,
+    dizzyDamageMultiplier: 1.5,
+    candyKnockCooldownMs: 1500,
+    summon: { count: 2, maxAlive: 4, intervalMs: 7000 },
+  },
+  // The arena is a full screen wide (960px), so the locked camera never shows
+  // past the end of the world, and the King has room to dig around.
+  portal: { x: 3800 },
+  bossSpawnX: 3620,
+  triggerX: 3100,
+  arenaLeft: 3000,
+};
+
+export const LEVELS: LevelDef[] = [levelOne, levelTwo, levelThree, levelFour, levelFive];
 
 export function levelByNumber(n: number): LevelDef {
   if (!Number.isFinite(n)) n = 1;

@@ -113,6 +113,29 @@ export const Assets = {
 
   LASER_BUBBLE: 'gen-laser-bubble',
 
+  // Sugar Rush Zone (Level 5, Wes) — baked parallax + generated candy tiles
+  CANDY_NIGHT_FAR: 'candy-night-far',
+  CANDY_NIGHT_MID: 'candy-night-mid',
+  CANDY_NIGHT_NEAR: 'candy-night-near',
+  CANDY_GROUND_TOP: 'gen-candy-ground-top',
+  CANDY_GROUND_FILL: 'gen-candy-ground-fill',
+  CANDY_PLATFORM: 'gen-candy-platform', // wafer bar
+  CANDY_STONE: 'gen-candy-stone', // gumdrop stepping stone
+  MARSHMALLOW: 'gen-marshmallow', // 2 frames: 0 rest / 1 squashed
+  LOLLIPOP_TREE: 'gen-lollipop-tree',
+  CUPCAKE: 'gen-cupcake',
+  CHOCOLATE_RIVER: 'gen-chocolate-river',
+  P_SPRINKLE: 'p-sprinkle',
+  GUMMY_SHEET: 'gen-gummy-sheet', // 3 frames: 0 stand / 1 squash / 2 stretch
+  GUMBALL_SHEET: 'gen-gumball-sheet', // 3 frames: 0 roll-a / 1 roll-b / 2 shake
+  CHOCO_SHEET: 'gen-choco-sheet', // 4 frames: 0 walk-a / 1 walk-b / 2 melting / 3 puddle
+  SOUR_CANDY: 'gen-sour-candy',
+  WORM_HEAD: 'gen-worm-head', // 4 frames: 0 closed / 1 open / 2 chomp / 3 dizzy
+  WORM_SEGMENT: 'gen-worm-segment',
+  DIRT_MOUND: 'gen-dirt-mound',
+  DIZZY_STAR: 'gen-dizzy-star',
+  PORTAL: 'gen-portal',
+
   // Shop (between-levels hub) — generated props + HUD consumable icons
   SHOP_ANVIL: 'gen-shop-anvil',
   SHOP_SHACK: 'gen-shop-shack',
@@ -142,6 +165,14 @@ export const LakeAnims = {
   EEL_LUNGE: 'eel-lunge',
   KRAKEN_IDLE: 'kraken-idle',
   KRAKEN_ENRAGED: 'kraken-enraged',
+} as const;
+
+// Candy anim keys registered by registerCandyAnims (src/art/candy.ts). The
+// gummy, gumball, and worm head pick frames by hand (setFrame), so only the
+// looping anims live here.
+export const CandyAnims = {
+  PORTAL_SWIRL: 'portal-swirl',
+  CHOCO_WALK: 'choco-walk',
 } as const;
 
 // Per-buff baked orb textures — keyed by PowerUpType so adding a powerup

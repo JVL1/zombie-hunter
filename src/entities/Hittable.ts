@@ -13,6 +13,9 @@ export interface Hittable {
   readonly body: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | null;
   // Contact-hit damage this enemy deals to the player.
   readonly contactDamage: number;
+  // Optional: true while the enemy can neither hurt nor be hit (a melted
+  // chocolate zombie puddle). Absent = always touchable.
+  readonly untouchable?: boolean;
   isDead(): boolean;
   // Apply a sword/slam hit; returns true when THIS hit dropped it to dead.
   takeHit(dmg: number): boolean;

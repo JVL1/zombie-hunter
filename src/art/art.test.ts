@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as candy from './candy';
 import * as city from './city';
 import * as common from './common';
 import * as forest from './forest';
@@ -9,9 +10,16 @@ import * as rail from './rail';
 import * as shop from './shop';
 
 describe('art module exports', () => {
-  it('helpers exports bakeTint and bakeSheet functions', () => {
+  it('helpers exports bakeTint, bakeSheet, and makeSheet functions', () => {
     expect(typeof helpers.bakeTint).toBe('function');
     expect(typeof helpers.bakeSheet).toBe('function');
+    expect(typeof helpers.makeSheet).toBe('function');
+  });
+
+  it('candy exports generateCandyTextures and registerCandyAnims (Wes, Level 5)', () => {
+    expect(Object.keys(candy).sort()).toEqual(['generateCandyTextures', 'registerCandyAnims']);
+    expect(typeof candy.generateCandyTextures).toBe('function');
+    expect(typeof candy.registerCandyAnims).toBe('function');
   });
 
   it('common exports generateCommonTextures function', () => {

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { generateCandyTextures, registerCandyAnims } from '../art/candy';
 import { generateCityTextures } from '../art/city';
 import { generateCommonTextures } from '../art/common';
 import { generateForestTextures } from '../art/forest';
@@ -87,6 +88,9 @@ export class PreloadScene extends Phaser.Scene {
     generateLakeTextures(this);
     // Lake enemy anims read the just-baked lake sheets — must follow the bake.
     registerLakeAnims(this);
+    generateCandyTextures(this);
+    // Candy anims read the just-baked candy sheets — must follow the bake.
+    registerCandyAnims(this);
     generateShopTextures(this);
     // Pre-tint the pale ruin layers into a night palette (runtime tint on
     // TileSprites is WebGL-only; baking it works on the canvas fallback too)
@@ -108,6 +112,11 @@ export class PreloadScene extends Phaser.Scene {
     bakeTint(this, Assets.RUIN_BG_2, Assets.LAKE_NIGHT_FAR, '#5a2226');
     bakeTint(this, Assets.RUIN_BG_3, Assets.LAKE_NIGHT_MID, '#401a1e');
     bakeTint(this, Assets.RUIN_BG_4, Assets.LAKE_NIGHT_NEAR, '#2c1214');
+    // Level 5: same ruin layers re-baked into a candy-pink dusk — Wes's candy
+    // world grew over the ruined city
+    bakeTint(this, Assets.RUIN_BG_2, Assets.CANDY_NIGHT_FAR, '#7a4a7e');
+    bakeTint(this, Assets.RUIN_BG_3, Assets.CANDY_NIGHT_MID, '#5a3462');
+    bakeTint(this, Assets.RUIN_BG_4, Assets.CANDY_NIGHT_NEAR, '#3c2244');
     // `?level=N` skips the menu and drops straight into level N
     const skipTo = levelFromQuery(window.location.search);
     if (skipTo !== null) {

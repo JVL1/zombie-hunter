@@ -172,6 +172,57 @@ export const EEL = {
   returnSpeed: 130,
 } as const;
 
+// The Sugar Rush Zone (Level 5) — Wes designed it 2026-09-22.
+// Design: docs/plans/2026-09-22-level5-sugar-rush-zone-design.md
+export const CANDY = {
+  sourCandyCap: 3,            // the player holds at most 3 sour candies
+  // Marshmallow pads: a double jump peaks ~220px; a bounce must beat it.
+  bounceVelocity: -780,       // ~304px apex
+  slamBounceVelocity: -900,   // slam onto a pad = pogo bonus (~405px apex)
+  maxFallVelocity: 900,       // matches Player.setMaxVelocity's y cap
+  marshmallowW: 64,           // pad body size (the baked texture matches)
+  marshmallowH: 28,
+  gummy: {
+    bodyW: 30,
+    bodyH: 32,
+    hp: 40,
+    cubHp: 14,
+    cubScale: 0.6,
+    contactDamage: 9,
+    cubContactDamage: 5,
+    aggroRange: 280,
+    hopSpeed: 120,            // horizontal speed during a hop
+    hopVelocity: -300,        // hop jump impulse
+    hopIntervalMs: 750,
+    cubHopIntervalMs: 520,
+  },
+  gumball: {
+    bodyW: 32,
+    bodyH: 32,
+    hp: 50,
+    contactDamage: 12,
+    patrolSpeed: 40,
+    aggroRange: 300,
+    shakeMs: 450,             // wind-up wobble before a roll
+    rollSpeed: 360,
+    rollDistance: 420,
+    rollCooldownMs: 1400,
+  },
+  chocolate: {
+    bodyW: 30,
+    bodyH: 54,
+    hp: 55,
+    contactDamage: 10,
+    walkSpeed: 60,
+    meltRange: 230,           // starts melting when the player is this close
+    meltCooldownMs: 3200,
+    meltMs: 350,              // melt/reform animation time
+    puddleSpeed: 260,
+    puddleMaxMs: 1200,        // reforms after this even if it never got behind
+    reformBehindPx: 90,
+  },
+} as const;
+
 export const ZOMBIE = {
   aggroRange: 240,
   deaggroRange: 330,

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Assets, PlayerAnims } from '../assets';
-import { BUFF, COMBAT, PLAYER, POWERUPS, SHOP, WATER } from '../config';
+import { BUFF, CANDY, COMBAT, PLAYER, POWERUPS, SHOP, WATER } from '../config';
 import { resolveDamage } from '../core/damage';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
@@ -34,6 +34,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private lastGroundedAt = -Infinity;
   private jumpsLeft = PLAYER.maxJumps;
   private wasGrounded = false;
+  // Marshmallow bounce (Level 5): true from the bounce until the apex, so the
+  // variable-jump cut can't clip the launch when jump isn't held.
+  private bouncing = false;
+  private bouncedThisFrame = false;
 
   // Dash state
   private dashing = false;
@@ -174,7 +178,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
     this.wasGrounded = grounded;
 
-    if (grounded) {
+    // A pad bounce this frame already set the jump state (no coyote, one air
+    // jump) — touching the pad must not count as standing on the ground.
+    if (grounded && !this.bouncedThisFrame) {
       this.lastGroundedAt = now;
       this.jumpsLeft = PLAYER.maxJumps;
       this.lastGroundedPos.x = this.x;
@@ -201,9 +207,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       // --- Jump (buffered + coyote + double) --- gated out underwater: no
       // ground/double/buffered jump fires (a buffered surface press must not
       // launch -470 at the lakebed) and jumpCut can't fight the swim thrust.
-      if (!this.inWater) {
+      // A marshmallow bounce this frame owns the vertical launch — a buffered
+      // ground jump must not overwrite it with the smaller jump velocity.
+      if (this.bouncing && body.velocity.y >= 0) this.bouncing = false;
+      // While a bounce still rises faster than a jump would, a jump press
+      // would only slow the player down, so it waits.
+      const bounceOutruns = this.bouncing && body.velocity.y < PLAYER.jumpVelocity;
+      if (!this.inWater && !this.bouncedThisFrame) {
         const canCoyote = now - this.lastGroundedAt <= PLAYER.coyoteMs;
-        if (this.controls.jumpJustPressed || grounded) {
+        if ((this.controls.jumpJustPressed || grounded) && !bounceOutruns) {
           if (this.controls.consumeBufferedJump()) {
             if (grounded || canCoyote) {
               this.doJump(false);
@@ -217,12 +229,18 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
           }
         }
 
-        // Variable jump height: release early to cut the jump short
-        if (!this.controls.jumpHeld && body.velocity.y < PLAYER.jumpCutVelocity) {
+        // Variable jump height: release early to cut the jump short. A bounce
+        // is not a jump — it always flies full height.
+        if (
+          !this.bouncing &&
+          !this.controls.jumpHeld &&
+          body.velocity.y < PLAYER.jumpCutVelocity
+        ) {
           this.setVelocityY(PLAYER.jumpCutVelocity);
         }
       }
     }
+    this.bouncedThisFrame = false;
 
     // --- Environment mode: upward thrust (swim / flight), then ONE gravity
     // resolution. Land behavior is bit-identical: with no water profile inWater
@@ -555,6 +573,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.slamHitbox.destroy();
       this.slamHitbox = null;
     }
+  }
+
+  // Marshmallow pad launch (Wes's idea). The scene calls this from the pad
+  // collider, which runs before update(). A slam onto a pad is a pogo bonus.
+  // Returns true for a slam bounce so the scene can add extra juice.
+  bounceOnPad(): boolean {
+    if (this.dying) return false;
+    const fromSlam = this.slamHitbox !== null;
+    this.endSlam();
+    this.setVelocityY(fromSlam ? CANDY.slamBounceVelocity : CANDY.bounceVelocity);
+    // One air jump stays available after the launch.
+    this.jumpsLeft = PLAYER.maxJumps - 1;
+    this.lastGroundedAt = -Infinity; // no coyote jump off the pad
+    this.bouncing = true;
+    this.bouncedThisFrame = true;
+    return fromSlam;
   }
 
   // Bounce off an enemy hit by the slam — refunds the double jump for chaining.

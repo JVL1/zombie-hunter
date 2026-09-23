@@ -5,7 +5,7 @@ import { GameState } from '../core/GameState';
 import { SynthAudio } from '../core/SynthAudio';
 import { floatText, lit } from '../fx/Effects';
 
-export type PickupKind = 'coin' | 'heart' | 'key' | 'orb' | 'scuba';
+export type PickupKind = 'coin' | 'heart' | 'key' | 'orb' | 'scuba' | 'sourCandy';
 
 // Coins/hearts/keys/orbs/scuba gear dropped into the world. Coins magnet to the
 // player when close; scuba (Level 4) is a static, buoyant air-tank pickup.
@@ -34,7 +34,9 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
             ? Assets.KEY
             : kind === 'scuba'
               ? Assets.SCUBA_PICKUP
-              : OrbTextures[powerUp!];
+              : kind === 'sourCandy'
+                ? Assets.SOUR_CANDY
+                : OrbTextures[powerUp!];
     super(scene, x, y, tex);
     this.kind = kind;
     this.powerUp = powerUp;
@@ -77,10 +79,15 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
       });
     }
     if (
-      (kind === 'key' || kind === 'orb' || kind === 'scuba') &&
+      (kind === 'key' || kind === 'orb' || kind === 'scuba' || kind === 'sourCandy') &&
       scene.sys.renderer.type === Phaser.WEBGL
     ) {
-      const color = kind === 'orb' && powerUp ? POWERUPS[powerUp].color : 0xffdd66;
+      const color =
+        kind === 'orb' && powerUp
+          ? POWERUPS[powerUp].color
+          : kind === 'sourCandy'
+            ? 0xd8ff3a
+            : 0xffdd66;
       const light = scene.lights.addLight(x, y, 140, color, 1.2);
       const follow = () => {
         if (this.active) light.setPosition(this.x, this.y);
@@ -174,7 +181,9 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
         SynthAudio.key();
         break;
       case 'scuba':
-        // No self-contained effect: the scene grants scuba air + plays the SFX.
+      case 'sourCandy':
+        // No self-contained effect: the scene owns scuba air and the sour
+        // candy count (Level 5), and plays the SFX.
         break;
       case 'orb':
         if (this.powerUp) {

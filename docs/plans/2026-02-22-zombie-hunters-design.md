@@ -153,14 +153,22 @@ Each boss sits on a unique throne at the end of their level. As the player appro
 - **Boss:** Giant ginormous zombie bloodhound on carnival throne
 - **Reward:** Key #4
 
-### Level 5 — The Dark Underworld
+> **Order change (2026-09-22):** Wes (5) designed a new Level 5, The Sugar Rush Zone. Josh moved the Dark Underworld to Level 6 and the final level to Level 7. The 5-key portal now opens at the end of Level 5 and leads to the underworld. See `2026-09-22-level5-sugar-rush-zone-design.md`.
+
+### Level 5 — The Sugar Rush Zone (Wes)
+- **Setting:** A rotten candy world with marshmallow bounce pads
+- **Enemies:** Gummy bear, gumball, and chocolate zombies
+- **Boss:** The Gummy Worm King (feed him a sour candy to make him dizzy)
+- **Milestone:** All 5 keys collected → the portal opens → the underworld
+- **Reward:** Key #5
+
+### Level 6 — The Dark Underworld
 - **Setting:** Dark, foreboding underworld
 - **Enemies:** Zombie hordes
 - **Boss:** Zombie Taco Truck on bone-shadow throne
-- **Milestone:** All 5 keys collected → portal unlocks
-- **Reward:** Key #5
+- **Reward:** To be decided (all 5 key slots are used)
 
-### Level 6 — The Abandoned Underworld (Final)
+### Level 7 — The Abandoned Underworld (Final)
 - **Setting:** Vast, dangerous abandoned underworld
 - **Enemies:** Little disgusting octopus zombies
 - **Final Boss:** Giant Brain Behemoth Titan Zombie — floats, zaps enemies, requires Giant Sun Splicer
