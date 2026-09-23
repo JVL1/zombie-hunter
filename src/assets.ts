@@ -109,6 +109,8 @@ export const Assets = {
   KRAKEN_HEAD: 'gen-kraken-head',
   KRAKEN_HEAD_ENRAGED: 'gen-kraken-head-enraged',
   TENTACLE_SEGMENT: 'gen-tentacle-segment',
+  TENTACLE_GLOW: 'gen-tentacle-glow', // the active guard: chop this one
+
   LASER_BUBBLE: 'gen-laser-bubble',
 
   // Sugar Rush Zone (Level 5, Wes) — baked parallax + generated candy tiles

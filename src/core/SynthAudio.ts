@@ -143,6 +143,14 @@ class SynthAudioImpl {
     this.osc('triangle', 1320, 990, 0.16, 0.2, 0.04);
   }
 
+  clank() {
+    // Hard metal CLANK — a sword bouncing off an armored (guarded) target
+    if (!this.ctx) return;
+    this.osc('square', 1500, 1100, 0.09, 0.25);
+    this.osc('triangle', 2400, 1900, 0.2, 0.2, 0.01);
+    this.noise(0.06, 0.4, 'highpass', 3000, 5000);
+  }
+
   groan(pitch = 1) {
     if (!this.ctx) return;
     const f = 75 * pitch;

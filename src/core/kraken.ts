@@ -1,4 +1,5 @@
 // Pure kraken boss reducer — mirrors damage.ts and air.ts. No Phaser imports.
+import { KRAKEN_SWIM } from '../config';
 import type { KrakenBossDef } from '../levels';
 
 export type KrakenPhase = 'guarded' | 'window' | 'dead';
@@ -66,18 +67,22 @@ export function hitTentacle(
     return { ...state };
   }
 
-  const hp = Math.max(0, state.tentacles[index].hp - Math.max(0, damage));
+  const before = state.tentacles[index].hp;
+  const hp = Math.max(0, before - Math.max(0, damage));
   const tentacles = state.tentacles.map((tentacle, tentacleIndex) =>
     tentacleIndex === index ? { ...tentacle, hp } : tentacle
   );
 
-  if (hp > 0) {
-    return { ...state, tentacles };
+  // A guard chop also comes off the boss health (only the damage the tentacle
+  // had left, not overkill), so every good hit moves the boss bar.
+  const hurt = damageBoss({ ...state, tentacles }, before - hp, now);
+  if (isDead(hurt) || hp > 0) {
+    return hurt;
   }
 
   tentacles[index] = { alive: false, regrowAt: now + state.regrowMs, hp: 0 };
   return {
-    ...state,
+    ...hurt,
     phase: 'window',
     tentacles,
     activeGuard: null,
@@ -90,7 +95,12 @@ export function hitHead(state: KrakenState, damage: number, now: number): Kraken
   if (isDead(state) || state.phase !== 'window' || now >= state.windowEndsAt) {
     return { ...state };
   }
+  return damageBoss(state, damage, now);
+}
 
+// Boss health loss shared by head and tentacle hits: latches enrage at half
+// health (and pulls the next bubble forward) and ends the fight at zero.
+function damageBoss(state: KrakenState, damage: number, now: number): KrakenState {
   const hp = Math.max(0, state.hp - Math.max(0, damage));
   const enraged = state.enraged || hp <= state.maxHp * 0.5;
   const becameEnraged = enraged && !state.enraged;
@@ -173,6 +183,46 @@ export function tick(
       nextBubbleAt,
     },
     effects: { fireBubble },
+  };
+}
+
+// --- Swim path ---
+// The head swims a figure-8 (x = sin a, y = sin 2a) around its home spot. The
+// angle advances by delta, so a speed change never makes the head jump. The
+// ramp eases the loop in from the home spot after the rise.
+
+export interface SwimState {
+  angle: number; // radians along the figure-8, kept in [0, 2π)
+  elapsedMs: number; // swim time so far, for the ease-in ramp
+}
+
+export function createSwimState(): SwimState {
+  return { angle: 0, elapsedMs: 0 };
+}
+
+export function stepSwim(
+  swim: SwimState,
+  deltaMs: number,
+  state: KrakenState
+): { swim: SwimState; dx: number; dy: number } {
+  let next = swim;
+  if (!isDead(state)) {
+    const speed =
+      (state.enraged ? KRAKEN_SWIM.enragedSpeed : 1) *
+      (state.phase === 'window' ? KRAKEN_SWIM.windowSpeed : 1);
+    const step = ((Math.PI * 2) / KRAKEN_SWIM.periodMs) * speed * Math.max(0, deltaMs);
+    next = {
+      angle: (swim.angle + step) % (Math.PI * 2),
+      elapsedMs: swim.elapsedMs + Math.max(0, deltaMs),
+    };
+  }
+  // Scaling by a 0..1 ramp keeps the offset inside the swim box, because the
+  // box holds the home spot (0, 0).
+  const ramp = Math.min(1, next.elapsedMs / KRAKEN_SWIM.rampMs);
+  return {
+    swim: next,
+    dx: ramp * (KRAKEN_SWIM.centerX + KRAKEN_SWIM.reachX * Math.sin(next.angle)),
+    dy: ramp * (KRAKEN_SWIM.centerY + KRAKEN_SWIM.reachY * Math.sin(next.angle * 2)),
   };
 }
 

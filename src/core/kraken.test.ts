@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { KrakenBossDef } from '../levels';
+import { KRAKEN_SWIM } from '../config';
 import {
   createKrakenState,
+  createSwimState,
   hitHead,
   hitTentacle,
   isDead,
+  stepSwim,
   tick,
   type KrakenState,
+  type SwimState,
 } from './kraken';
 
 const def: KrakenBossDef = {
@@ -72,6 +76,45 @@ describe('hitTentacle', () => {
     expect(state).toMatchObject({ phase: 'window', activeGuard: null, windowEndsAt: 3500 });
     expect(state.tentacles[0]).toEqual({ alive: false, regrowAt: 7000, hp: 0 });
   });
+
+  // Henry and Wes chopped tentacles and saw the boss bar stay full, so it
+  // looked like no damage. Guard chops now count against the boss too.
+  it('takes the same damage off the boss health', () => {
+    const state = createKrakenState(def);
+    const result = hitTentacle(state, 0, 12, 100);
+
+    expect(result.hp).toBe(def.hp - 12);
+    expect(state.hp).toBe(def.hp);
+  });
+
+  it('counts only the damage that the tentacle had left, not overkill', () => {
+    const state = createKrakenState(def);
+    const result = hitTentacle(state, 0, 999, 100);
+
+    expect(result.hp).toBe(def.hp - state.tentacleMaxHp);
+  });
+
+  it('does not hurt the boss on a blocked tentacle hit', () => {
+    const state = createKrakenState(def);
+
+    expect(hitTentacle(state, 1, 50, 100).hp).toBe(def.hp);
+  });
+
+  it('can enrage the boss at half health', () => {
+    const state = { ...createKrakenState(def), hp: def.hp / 2 + 5 };
+    const result = hitTentacle(state, 0, 10, 100);
+
+    expect(result.enraged).toBe(true);
+    expect(result.nextBubbleAt).toBeLessThanOrEqual(100 + def.bubble.enragedIntervalMs);
+  });
+
+  it('kills the boss when the last health goes on a tentacle chop', () => {
+    const state = { ...createKrakenState(def), hp: 5 };
+    const result = hitTentacle(state, 0, 12, 100);
+
+    expect(result).toMatchObject({ hp: 0, phase: 'dead', activeGuard: null });
+    expect(isDead(result)).toBe(true);
+  });
 });
 
 describe('hitHead', () => {
@@ -88,9 +131,11 @@ describe('hitHead', () => {
     const result = hitHead(state, 75, 1200);
     const expired = hitHead(state, 75, state.windowEndsAt);
 
-    expect(result.hp).toBe(def.hp - 75);
-    expect(expired.hp).toBe(def.hp);
-    expect(state.hp).toBe(def.hp);
+    // The guard chop already took tentacleMaxHp off the boss.
+    const afterChop = def.hp - state.tentacleMaxHp;
+    expect(state.hp).toBe(afterChop);
+    expect(result.hp).toBe(afterChop - 75);
+    expect(expired.hp).toBe(afterChop);
   });
 
   it('latches enrage at half health', () => {
@@ -196,5 +241,91 @@ describe('bubble effects', () => {
 
     expect(tick(dead, Number.MAX_SAFE_INTEGER).effects.fireBubble).toBe(false);
     expect(isDead({ ...dead, phase: 'window' })).toBe(true);
+  });
+});
+
+// The Beast swims a figure-8 around its home spot (the live game showed it
+// frozen in place for the whole fight before this).
+describe('stepSwim', () => {
+  const calm = createKrakenState(def);
+  const minX = KRAKEN_SWIM.centerX - KRAKEN_SWIM.reachX;
+  const maxX = KRAKEN_SWIM.centerX + KRAKEN_SWIM.reachX;
+  const minY = KRAKEN_SWIM.centerY - KRAKEN_SWIM.reachY;
+  const maxY = KRAKEN_SWIM.centerY + KRAKEN_SWIM.reachY;
+
+  function swimFor(ms: number, state: KrakenState, stepMs = 16) {
+    let swim: SwimState = createSwimState();
+    let dx = 0;
+    let dy = 0;
+    for (let t = 0; t < ms; t += stepMs) {
+      ({ swim, dx, dy } = stepSwim(swim, stepMs, state));
+    }
+    return { swim, dx, dy };
+  }
+
+  it('starts exactly at the home spot so the rise never jumps', () => {
+    const { dx, dy } = stepSwim(createSwimState(), 0, calm);
+    expect(dx).toBeCloseTo(0, 9);
+    expect(dy).toBeCloseTo(0, 9);
+  });
+
+  it('actually moves away from home during the fight', () => {
+    const { dx, dy } = swimFor(2000, calm);
+    expect(Math.hypot(dx, dy)).toBeGreaterThan(20);
+  });
+
+  it('keeps visiting new spots across a full loop', () => {
+    let swim = createSwimState();
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let t = 0; t < KRAKEN_SWIM.periodMs * 2; t += 16) {
+      const step = stepSwim(swim, 16, calm);
+      swim = step.swim;
+      xs.push(step.dx);
+      ys.push(step.dy);
+    }
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(KRAKEN_SWIM.reachX * 1.5);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(KRAKEN_SWIM.reachY * 1.5);
+  });
+
+  it('stays inside the swim box for a long fight, even with big frame gaps', () => {
+    for (const stepMs of [8, 16, 33, 250]) {
+      let swim = createSwimState();
+      for (let t = 0; t < 60000; t += stepMs) {
+        const step = stepSwim(swim, stepMs, t % 20000 < 10000 ? calm : { ...calm, enraged: true });
+        swim = step.swim;
+        expect(step.dx).toBeGreaterThanOrEqual(minX - 1e-9);
+        expect(step.dx).toBeLessThanOrEqual(maxX + 1e-9);
+        expect(step.dy).toBeGreaterThanOrEqual(minY - 1e-9);
+        expect(step.dy).toBeLessThanOrEqual(maxY + 1e-9);
+      }
+    }
+  });
+
+  it('glides smoothly with no teleport between frames', () => {
+    let swim = createSwimState();
+    let prev = { dx: 0, dy: 0 };
+    for (let t = 0; t < 20000; t += 16) {
+      const enraged = t > 10000;
+      const step = stepSwim(swim, 16, { ...calm, enraged });
+      swim = step.swim;
+      expect(Math.hypot(step.dx - prev.dx, step.dy - prev.dy)).toBeLessThan(4);
+      prev = step;
+    }
+  });
+
+  it('swims faster when enraged and slower while the head is open', () => {
+    const calmAngle = swimFor(1000, calm).swim.angle;
+    const madAngle = swimFor(1000, { ...calm, enraged: true }).swim.angle;
+    const openAngle = swimFor(1000, { ...calm, phase: 'window', activeGuard: null }).swim.angle;
+    expect(madAngle).toBeCloseTo(calmAngle * KRAKEN_SWIM.enragedSpeed, 5);
+    expect(openAngle).toBeCloseTo(calmAngle * KRAKEN_SWIM.windowSpeed, 5);
+  });
+
+  it('stops swimming once dead', () => {
+    const dead = { ...calm, hp: 0, phase: 'dead' as const };
+    const before = swimFor(3000, calm).swim;
+    const after = stepSwim(before, 500, dead);
+    expect(after.swim).toEqual(before);
   });
 });
