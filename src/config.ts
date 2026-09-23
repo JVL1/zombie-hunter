@@ -216,3 +216,17 @@ export const BOSS = {
   summonTelegraphMs: 500,
   summonOpeningGraceMs: 2500, // min delay before a boss's first summon
 };
+
+// Kraken swim path: a slow figure-8 around its risen home spot, reaching
+// toward the player (left) and back. Offsets are in world px from home.
+// Level 4 arena limits: surface y 120, ground y 476, right wall x 3400.
+export const KRAKEN_SWIM = {
+  centerX: -40, // loop center, left of home
+  reachX: 45, // half-width: x swings from -85 to +5
+  centerY: -30, // loop center, above home
+  reachY: 35, // half-height: y swings from -65 to +5
+  periodMs: 6000, // one full figure-8 when calm
+  enragedSpeed: 1.7, // speed multiplier after the 50% enrage
+  windowSpeed: 0.5, // slower while the head is open, so kids can land hits
+  rampMs: 1500, // ease in from the home spot so the rise never jumps
+};

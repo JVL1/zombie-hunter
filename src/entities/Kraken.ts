@@ -4,11 +4,14 @@ import { Juice } from '../core/Juice';
 import { SynthAudio } from '../core/SynthAudio';
 import {
   createKrakenState,
+  createSwimState,
   hitHead,
   hitTentacle,
   isDead as krakenDead,
+  stepSwim,
   tick,
   type KrakenState,
+  type SwimState,
 } from '../core/kraken';
 import { lit } from '../fx/Effects';
 import type { KrakenBossDef } from '../levels';
@@ -53,6 +56,10 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
   private frozen = false; // cinematic freeze for bubbles (scene-driven)
   private enrageApplied = false;
   private defeated = false;
+
+  // Swim path: starts at the risen spot once the rise tween ends.
+  private swim: SwimState = createSwimState();
+  private home: { x: number; y: number } | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, juice: Juice, def: KrakenBossDef) {
     super(scene, x, y, Assets.KRAKEN_HEAD, 0);
@@ -193,11 +200,15 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
     this.tentacles.forEach((t) => ((t.body as Phaser.Physics.Arcade.Body).enable = true));
 
     // Emerge: rise a touch and pulse. No throne, no ground — it surfaces.
+    // When the rise ends, that spot becomes the home of the swim path.
     this.scene.tweens.add({
       targets: this,
       y: this.y - 40,
       duration: 900,
       ease: 'Power2',
+      onComplete: () => {
+        this.home = { x: this.x, y: this.y };
+      },
     });
     this.scene.tweens.add({
       targets: this,
@@ -274,6 +285,14 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
     this.krakenState = state;
 
     if (state.enraged && !this.enrageApplied) this.applyEnrage();
+
+    // Swim the figure-8 (paused while the cutscene freezes the fight). The
+    // tentacles and the head light read this.x/y below, so they follow.
+    if (this.home && !this.frozen) {
+      const { swim, dx, dy } = stepSwim(this.swim, delta, this.krakenState);
+      this.swim = swim;
+      this.setPosition(this.home.x + dx, this.home.y + dy);
+    }
 
     this.syncTentacles();
 
