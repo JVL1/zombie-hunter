@@ -21,6 +21,33 @@ export function bakeTint(scene: Phaser.Scene, srcKey: string, destKey: string, t
   canvas.refresh();
 }
 
+// Build a baked spritesheet on a real 2D canvas (Canvas + WebGL safe) and
+// register numbered frames 0..n. Each painter draws frame-local (origin at the
+// frame's top-left, clipped to the frame). For art with no source PNG.
+export function makeSheet(
+  scene: Phaser.Scene,
+  key: string,
+  frameW: number,
+  frameH: number,
+  frames: Array<(ctx: CanvasRenderingContext2D) => void>,
+): void {
+  const cols = frames.length;
+  const tex = scene.textures.createCanvas(key, frameW * cols, frameH);
+  if (!tex) return;
+  const ctx = tex.getContext();
+  frames.forEach((draw, i) => {
+    ctx.save();
+    ctx.translate(i * frameW, 0);
+    ctx.beginPath();
+    ctx.rect(0, 0, frameW, frameH);
+    ctx.clip();
+    draw(ctx);
+    ctx.restore();
+  });
+  tex.refresh();
+  for (let i = 0; i < cols; i++) tex.add(i, 0, i * frameW, 0, frameW, frameH);
+}
+
 export function bakeSheet(
   scene: Phaser.Scene,
   srcKey: string,

@@ -165,6 +165,14 @@ export const LakeAnims = {
   KRAKEN_ENRAGED: 'kraken-enraged',
 } as const;
 
+// Candy anim keys registered by registerCandyAnims (src/art/candy.ts). The
+// gummy, gumball, and worm head pick frames by hand (setFrame), so only the
+// looping anims live here.
+export const CandyAnims = {
+  PORTAL_SWIRL: 'portal-swirl',
+  CHOCO_WALK: 'choco-walk',
+} as const;
+
 // Per-buff baked orb textures — keyed by PowerUpType so adding a powerup
 // without an orb texture fails the typecheck here (and only here).
 export const OrbTextures: Record<PowerUpType, string> = {

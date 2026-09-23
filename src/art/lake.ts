@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import { Assets, LakeAnims } from '../assets';
+import { makeSheet } from './helpers';
 
 // Level 4 (The Zombified Lake) — a drowned world under blood-red murk. Wreck
 // tiles and props are drawn with Phaser Graphics (single frames, Canvas-safe);
@@ -10,33 +11,6 @@ import { Assets, LakeAnims } from '../assets';
 // in PreloadScene, alongside the other themes. The anim keys live in
 // assets.ts (LakeAnims) beside PlayerAnims/ZombieAnims — the contract for
 // Tasks 11 (kraken) and 12 (fish/eel).
-
-// Build a baked spritesheet on a real 2D canvas (Canvas + WebGL safe) and
-// register numbered frames 0..n, mirroring helpers.bakeSheet's frame loop but
-// drawing from scratch (no source PNG for these non-humanoid enemies).
-function makeSheet(
-  scene: Phaser.Scene,
-  key: string,
-  frameW: number,
-  frameH: number,
-  frames: Array<(ctx: CanvasRenderingContext2D) => void>,
-): void {
-  const cols = frames.length;
-  const tex = scene.textures.createCanvas(key, frameW * cols, frameH);
-  if (!tex) return;
-  const ctx = tex.getContext();
-  frames.forEach((draw, i) => {
-    ctx.save();
-    ctx.translate(i * frameW, 0);
-    ctx.beginPath();
-    ctx.rect(0, 0, frameW, frameH);
-    ctx.clip();
-    draw(ctx);
-    ctx.restore();
-  });
-  tex.refresh();
-  for (let i = 0; i < cols; i++) tex.add(i, 0, i * frameW, 0, frameW, frameH);
-}
 
 // --- Enemy frame painters (drawn frame-local, origin at the frame's top-left) ---
 
