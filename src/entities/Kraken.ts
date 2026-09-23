@@ -13,7 +13,7 @@ import {
   type KrakenState,
   type SwimState,
 } from '../core/kraken';
-import { lit } from '../fx/Effects';
+import { floatText, lit, shockwave } from '../fx/Effects';
 import type { KrakenBossDef } from '../levels';
 import type { BossEncounter } from './BossEncounter';
 import type { Player } from './Player';
@@ -24,6 +24,8 @@ const SPREAD_RAD = Phaser.Math.DegToRad(20);
 const TENTACLE_RADIUS = 96; // px from head center to a guard tentacle's anchor
 const GUARD_PUSH = 20; // extra px the active guard leans toward the player
 const HEAD_BODY = 60; // square head hitbox side, in source pixels (scaled by def.scale)
+const GUARD_PULSE_MS = 500; // one glow pulse of the active guard tentacle
+const CLANK_HINT_MS = 1500; // min gap between "CHOP THE GLOWING TENTACLE!" hints
 
 // THE SUNKEN BEAST — Level 4's multi-body kraken boss (Henry's Sunken Beast).
 //
@@ -56,6 +58,7 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
   private frozen = false; // cinematic freeze for bubbles (scene-driven)
   private enrageApplied = false;
   private defeated = false;
+  private lastClankHintAt = -Infinity;
 
   // Swim path: starts at the risen spot once the rise tween ends.
   private swim: SwimState = createSwimState();
@@ -270,6 +273,12 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
           hitSet.add(this);
           this.krakenState = hitHead(this.krakenState, damage, now);
           onHit(target.x, target.y, this.isDead());
+        } else if (!hitbox.getData('clanked')) {
+          // Guarded head: the sword bounces off. A flag (not the hitSet
+          // sentinel) marks the clank, so this swing can still hit the guard
+          // tentacle if the swimming kraken moves it into the blade.
+          hitbox.setData('clanked', true);
+          this.clank(hitbox.x, hitbox.y);
         }
       }
     });
@@ -318,6 +327,19 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
     this.juice.zoomPunch(0.08, 300);
   }
 
+  // A sword hit on the guarded head: metal CLANK, a spark ring, and (at most
+  // every CLANK_HINT_MS) a hint that tells kids what to hit instead.
+  private clank(x: number, y: number) {
+    SynthAudio.clank();
+    shockwave(this.scene, x, y, 0.9);
+    const now = this.scene.time.now;
+    if (now - this.lastClankHintAt >= CLANK_HINT_MS) {
+      this.lastClankHintAt = now;
+      floatText(this.scene, x, y - 24, 'CLANK!', '#e8f0ff', 16);
+      floatText(this.scene, this.x, this.y - 110, 'CHOP THE GLOWING TENTACLE!', '#eaff6a', 16);
+    }
+  }
+
   // Reflect the pure state onto the tentacle sprites each frame: dead tentacles
   // hide (and their bodies stop hurting); the active guard leans toward the
   // player and scales up so the kid can read which one to hit.
@@ -338,7 +360,17 @@ export class Kraken extends Phaser.Physics.Arcade.Sprite implements BossEncounte
       sprite.x = this.x + anchor.dx + Math.cos(anchor.angle) * push;
       sprite.y = this.y + anchor.dy + Math.sin(anchor.angle) * push;
       const s = this.def.scale;
-      sprite.setScale(isGuard ? s * 1.05 : s * 0.9, isGuard ? s * 2.7 : s * 2.4);
+      // The active guard wears the baked glow texture and throbs, so kids can
+      // find the tentacle to chop while the kraken swims.
+      const glowKey = isGuard ? Assets.TENTACLE_GLOW : Assets.TENTACLE_SEGMENT;
+      if (sprite.texture.key !== glowKey) sprite.setTexture(glowKey);
+      const pulse = isGuard
+        ? 1 + 0.08 * Math.sin((this.scene.time.now / GUARD_PULSE_MS) * Math.PI * 2)
+        : 1;
+      sprite.setScale(
+        (isGuard ? s * 1.05 : s * 0.9) * pulse,
+        (isGuard ? s * 2.7 : s * 2.4) * pulse
+      );
     }
   }
 
