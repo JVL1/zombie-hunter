@@ -44,7 +44,30 @@ export interface KrakenBossDef extends BossBase {
   enragedSpreadCount: number; // aimed bubbles per volley once enraged (>= 3)
 }
 
-export type BossDef = WalkerBossDef | KrakenBossDef;
+// THE GUMMY WORM KING (Level 5, Wes's boss). He digs under the ground, shakes
+// it, pops up to chomp, and gets dizzy when he eats a sour candy.
+export interface WormBossDef extends BossBase {
+  kind: 'worm';
+  burrowSpeed: number; // px/s the dirt mound slides toward the player
+  enragedBurrowSpeed: number;
+  underMs: number; // time under the ground before the shake
+  enragedUnderMs: number;
+  shakeMs: number; // ground-shake warning before the pop-up
+  enragedShakeMs: number;
+  popMs: number; // the eruption (hurts on contact)
+  exposedMs: number; // time above the ground before he digs again
+  mouthOpenMs: number; // mouth-open part of each chomp cycle (feed window)
+  mouthClosedMs: number; // mouth-closed part of each chomp cycle
+  chompMs: number; // the snap at the end of each open phase (hurts on contact)
+  dizzyMs: number; // damage window after a sour candy
+  digMs: number; // dig-down animation time
+  chipDamageRatio: number; // share of damage a hit does when he is NOT dizzy
+  dizzyDamageMultiplier: number;
+  candyKnockCooldownMs: number;
+  summon: { count: number; maxAlive: number; intervalMs: number }; // gummy cubs, enraged only
+}
+
+export type BossDef = WalkerBossDef | KrakenBossDef | WormBossDef;
 
 export interface WaterDef {
   surfaceY: number;

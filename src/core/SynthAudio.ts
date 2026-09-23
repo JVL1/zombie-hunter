@@ -175,6 +175,33 @@ class SynthAudioImpl {
     [440, 349, 262, 196].forEach((f, i) => this.osc('sawtooth', f, f * 0.97, 0.4, 0.3, i * 0.3));
   }
 
+  // Marshmallow bounce pad (Wes's idea) — a rising cartoon "boing".
+  boing() {
+    this.osc('sine', 180, 620, 0.22, 0.35);
+    this.osc('triangle', 360, 900, 0.18, 0.12, 0.03);
+  }
+
+  // Gummy Worm King chomp — a quick low jaw snap.
+  chomp() {
+    if (!this.ctx) return;
+    this.osc('square', 220, 70, 0.12, 0.35);
+    this.noise(0.1, 0.4, 'lowpass', 1200, 200, 0.02);
+  }
+
+  // Sour candy eaten — a squeaky "sour face" wobble.
+  sour() {
+    [700, 520, 780, 480].forEach((f, i) => this.osc('square', f, f * 0.9, 0.08, 0.16, i * 0.07));
+  }
+
+  // The 5-key portal opens — a rising magic shimmer.
+  portal() {
+    if (!this.ctx) return;
+    [392, 523, 659, 784, 1047, 1319].forEach((f, i) =>
+      this.osc('triangle', f, f * 1.02, 0.35, 0.22, i * 0.08)
+    );
+    this.noise(1.2, 0.25, 'bandpass', 400, 3000, 0, 3);
+  }
+
   // Drowning pulse — low sine double-thump, rate-limited so a per-frame
   // drowning caller never stacks it into a drone.
   heartbeat() {
