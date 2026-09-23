@@ -1,7 +1,14 @@
 import Phaser from 'phaser';
-import { Assets } from '../assets';
-import { BOSS, GAME_H, GAME_W, POWERUPS, SHOP, WATER, WORLD, ZOMBIE, ZombieVariant } from '../config';
+import { Assets, CandyAnims } from '../assets';
+import { BOSS, CANDY, GAME_H, GAME_W, POWERUPS, SHOP, WATER, WORLD, ZOMBIE, ZombieVariant } from '../config';
 import { AirState, createAirState, grantScuba, restoreAir, scubaHit, tickAir } from '../core/air';
+import {
+  collect as collectSourCandy,
+  createSourCandyState,
+  knockLoose,
+  tryFeed,
+  type SourCandyState,
+} from '../core/sourCandy';
 import { DamageOutcome } from '../core/damage';
 import { GameState } from '../core/GameState';
 import { InputController } from '../core/InputController';
@@ -10,21 +17,26 @@ import { SynthAudio } from '../core/SynthAudio';
 import { inVent, shouldCrackScuba } from '../core/water';
 import { Boss } from '../entities/Boss';
 import type { BossEncounter } from '../entities/BossEncounter';
+import { Chocolate } from '../entities/candy/Chocolate';
+import { Gumball } from '../entities/candy/Gumball';
+import { GummyBear } from '../entities/candy/GummyBear';
 import { Eel } from '../entities/Eel';
 import { Fish } from '../entities/Fish';
 import { Hittable } from '../entities/Hittable';
 import { Kraken } from '../entities/Kraken';
 import { AttackEvent, DamageSource, Player, SlamEvent } from '../entities/Player';
 import { Pickup } from '../entities/Pickups';
+import { Worm } from '../entities/Worm';
 import { Zombie } from '../entities/Zombie';
 import { dustPuff, floatText, lit, shockwave } from '../fx/Effects';
 import { GoreSystem } from '../fx/Splatter';
-import { LevelDef, WaterDef } from '../levels';
+import { CandyDef, CandyEnemyKind, LevelDef, WaterDef } from '../levels';
 
-// A self-driving water enemy (Fish/Eel): a Hittable that also updates from the
-// scene clock. The base owns the group + all combat plumbing; Task 15 populates
-// it from def.water. Left empty, it is a no-op on Levels 1-3.
-type WaterEnemy = Phaser.GameObjects.GameObject &
+// A self-driving non-zombie enemy (Level 4 fish/eel, Level 5 gummy bears,
+// gumballs, chocolate zombies): a Hittable that also updates from the scene
+// clock. The base owns the group + all combat plumbing; def.water and
+// def.candy populate it. Left empty, it is a no-op on Levels 1-3.
+type ExtraEnemy = Phaser.GameObjects.GameObject &
   Hittable & { update(time: number, delta: number): void };
 
 interface ParallaxLayer {
@@ -51,10 +63,17 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   protected player!: Player;
   protected solids!: Phaser.Physics.Arcade.StaticGroup;
   protected zombies!: Phaser.GameObjects.Group;
-  // Fish/eel live in their own group so land-zombie wiring is untouched; both
-  // groups flow through the same Hittable combat/contact/straggler plumbing.
-  protected waterEnemies!: Phaser.GameObjects.Group;
+  // Fish/eel and candy enemies live in their own group so land-zombie wiring
+  // is untouched; both groups flow through the same Hittable combat/contact/
+  // straggler plumbing.
+  protected extraEnemies!: Phaser.GameObjects.Group;
   protected pickups!: Phaser.GameObjects.Group;
+
+  // Level 5 (Wes's Sugar Rush Zone): marshmallow bounce pads and the player's
+  // sour candy pocket. Null/empty on every other level (no def.candy).
+  protected pads: Phaser.Physics.Arcade.StaticGroup | null = null;
+  private sourCandy: SourCandyState | null = null;
+  private portalOpen = false;
   private contactCooldown = new Map<Hittable, number>();
 
   // Breathing/scuba runtime for water levels. Null on Levels 1-3 (no def.water);
@@ -99,8 +118,13 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     this.events.off('player-hurt');
     this.events.off('boss-shockwave');
     this.events.off('boss-summon');
+    this.events.off('gummy-split');
+    this.events.off('worm-summon');
 
     this.boss = null;
+    this.pads = null;
+    this.sourCandy = null;
+    this.portalOpen = false;
     this.bossTriggered = false;
     this.cinematic = false;
     this.air = null;
@@ -168,18 +192,27 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     // --- Water enemies (fish/eel) ---
     // Empty infrastructure here; Task 15 populates it from def.water on Level 4.
     // No solid collider — fish/eel are neutral-buoyancy hoverers, not grounded.
-    this.waterEnemies = this.add.group();
+    this.extraEnemies = this.add.group();
 
     // --- Pickups ---
     this.pickups = this.add.group();
     this.physics.add.collider(this.pickups, this.solids);
     this.physics.add.overlap(this.player, this.pickups, (_p, pickupObj) => {
       const pickup = pickupObj as Pickup;
+      // A full candy pocket leaves the candy on the ground for later.
+      if (
+        pickup.kind === 'sourCandy' &&
+        (!this.sourCandy || this.sourCandy.count >= CANDY.sourCandyCap)
+      ) {
+        return;
+      }
       const wasKey = pickup.kind === 'key';
       const wasScuba = pickup.kind === 'scuba';
+      const wasSourCandy = pickup.kind === 'sourCandy';
       pickup.collect(this.player);
       if (wasKey) this.onKeyCollected();
       if (wasScuba) this.onScubaCollected();
+      if (wasSourCandy) this.onSourCandyCollected();
     });
 
     // --- Water level: breathing state, swim profiles, vents, fish/eel (L4) ---
@@ -187,12 +220,17 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       this.setupWaterLevel(this.def.water);
     }
 
+    // --- Candy level: marshmallows, candy enemies, sour candy (L5, Wes) ---
+    if (this.def.candy) {
+      this.setupCandyLevel(this.def.candy);
+    }
+
     // --- Contact damage --- (zombies + water enemies share the cooldown map)
     this.physics.add.overlap(this.player, this.zombies, (_p, zombieObj) => {
       this.handleContact(zombieObj as Zombie);
     });
-    this.physics.add.overlap(this.player, this.waterEnemies, (_p, enemyObj) => {
-      this.handleContact(enemyObj as WaterEnemy);
+    this.physics.add.overlap(this.player, this.extraEnemies, (_p, enemyObj) => {
+      this.handleContact(enemyObj as ExtraEnemy);
     });
 
     this.wireCombatEvents();
@@ -348,7 +386,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
   // Shared contact-damage gate for both zombies and water enemies, keyed by the
   // one cooldown map so a swimmer and a zombie can't stack hits within a tick.
   private handleContact(h: Hittable) {
-    if (h.isDead() || this.player.isDying) return;
+    if (h.isDead() || h.untouchable || this.player.isDying) return;
     const now = this.time.now;
     const last = this.contactCooldown.get(h) ?? 0;
     if (now - last > ZOMBIE.contactCooldownMs) {
@@ -362,8 +400,8 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       const zc = this.physics.add.overlap(hitbox, this.zombies, (_hb, zombieObj) => {
         this.applyHit(hitbox, zombieObj as Zombie, damage, isFinisher, false);
       });
-      const wc = this.physics.add.overlap(hitbox, this.waterEnemies, (_hb, enemyObj) => {
-        this.applyHit(hitbox, enemyObj as WaterEnemy, damage, isFinisher, false);
+      const wc = this.physics.add.overlap(hitbox, this.extraEnemies, (_hb, enemyObj) => {
+        this.applyHit(hitbox, enemyObj as ExtraEnemy, damage, isFinisher, false);
       });
       hitbox.once('destroy', () => {
         zc.destroy();
@@ -376,8 +414,8 @@ export abstract class BaseLevelScene extends Phaser.Scene {
       const zc = this.physics.add.overlap(hitbox, this.zombies, (_hb, zombieObj) => {
         this.applyHit(hitbox, zombieObj as Zombie, damage, true, true);
       });
-      const wc = this.physics.add.overlap(hitbox, this.waterEnemies, (_hb, enemyObj) => {
-        this.applyHit(hitbox, enemyObj as WaterEnemy, damage, true, true);
+      const wc = this.physics.add.overlap(hitbox, this.extraEnemies, (_hb, enemyObj) => {
+        this.applyHit(hitbox, enemyObj as ExtraEnemy, damage, true, true);
       });
       hitbox.once('destroy', () => {
         zc.destroy();
@@ -452,7 +490,8 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     big: boolean,
     isSlam: boolean
   ) {
-    if (h.isDead() || !h.active) return;
+    // A melted chocolate puddle: the sword passes over it (no hit, no FX).
+    if (h.isDead() || !h.active || h.untouchable) return;
     const hitSet = hitbox.getData('hitSet') as Set<unknown>;
     if (hitSet.has(h)) return;
     hitSet.add(h);
@@ -525,6 +564,10 @@ export abstract class BaseLevelScene extends Phaser.Scene {
         this.addPickup(new Pickup(this, h.x + 14, h.y - 24, 'heart'));
       }
     }
+    // Wes/Josh: Gumball Zombies drop the sour candy for the Worm King fight.
+    if (h instanceof Gumball) {
+      this.addPickup(new Pickup(this, h.x, h.y - 24, 'sourCandy'));
+    }
 
     this.contactCooldown.delete(h);
     h.die();
@@ -541,10 +584,23 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     // The Kraken has no ground; it spawns submerged and rises via triggerRise.
     const bx = this.def.bossSpawnX;
     const by = WORLD.groundY - 80;
-    const boss =
-      this.def.boss.kind === 'kraken'
-        ? new Kraken(this, bx, by, this.juice, this.def.boss)
-        : new Boss(this, bx, by, this.juice, this.def.boss);
+    let boss: Boss | Kraken | Worm;
+    if (this.def.boss.kind === 'kraken') {
+      boss = new Kraken(this, bx, by, this.juice, this.def.boss);
+    } else if (this.def.boss.kind === 'worm') {
+      // The Gummy Worm King digs anywhere inside the locked arena.
+      const worm = new Worm(this, bx, by, this.juice, this.def.boss, {
+        minX: this.def.arenaLeft + 70,
+        maxX: this.def.worldWidth - 70,
+      });
+      worm.setCandyHooks({
+        spendCandy: () => this.spendSourCandy(),
+        knockLoose: (x, y) => this.knockSourCandyLoose(x, y),
+      });
+      boss = worm;
+    } else {
+      boss = new Boss(this, bx, by, this.juice, this.def.boss);
+    }
     boss.setTarget(this.player);
     this.boss = boss;
 
@@ -598,12 +654,15 @@ export abstract class BaseLevelScene extends Phaser.Scene {
 
       this.pickups.getChildren().forEach((pickupObj) => {
         const pickup = pickupObj as Pickup;
-        if (pickup.active && pickup.kind === 'orb') pickup.magnetize();
+        // Sour candies ride along too — the Worm King fight needs them.
+        if (pickup.active && (pickup.kind === 'orb' || pickup.kind === 'sourCandy')) {
+          pickup.magnetize();
+        }
       });
 
       // Clear stragglers before shrinking the world
       this.zombies.getChildren().slice().forEach((z) => (z as Zombie).destroy());
-      this.waterEnemies.getChildren().slice().forEach((e) => (e as WaterEnemy).destroy());
+      this.extraEnemies.getChildren().slice().forEach((e) => (e as ExtraEnemy).destroy());
       this.contactCooldown.clear();
 
       this.time.delayedCall(1100, () => {
@@ -703,11 +762,11 @@ export abstract class BaseLevelScene extends Phaser.Scene {
         this.gore.burst(z.x, z.y, false);
         z.destroy();
       });
-    this.waterEnemies
+    this.extraEnemies
       .getChildren()
       .slice()
       .forEach((eObj) => {
-        const e = eObj as WaterEnemy;
+        const e = eObj as ExtraEnemy;
         this.gore.burst(e.x, e.y, false);
         e.destroy();
       });
@@ -777,7 +836,7 @@ export abstract class BaseLevelScene extends Phaser.Scene {
         .setDepth(2);
     }
 
-    // Fish schools + eels populate the (else-empty) waterEnemies group; all
+    // Fish schools + eels populate the (else-empty) extraEnemies group; all
     // combat/contact/straggler plumbing already flows through it.
     for (const school of water.fishSchools) {
       for (let i = 0; i < school.count; i++) {
@@ -788,14 +847,14 @@ export abstract class BaseLevelScene extends Phaser.Scene {
         );
         fish.setTarget(this.player);
         fish.setDepth(5);
-        this.waterEnemies.add(fish);
+        this.extraEnemies.add(fish);
       }
     }
     for (const anchor of water.eels) {
       const eel = new Eel(this, anchor.x, anchor.y);
       eel.setTarget(this.player);
       eel.setDepth(5);
-      this.waterEnemies.add(eel);
+      this.extraEnemies.add(eel);
     }
 
     // Scuba cracks only when a NON-drowning hit actually lands on the body
@@ -890,7 +949,197 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     });
   }
 
+  // ------------------------------------------------------------------
+  // Candy system (Level 5, Wes — all gated on def.candy; no-op elsewhere)
+  // ------------------------------------------------------------------
+
+  private setupCandyLevel(candy: CandyDef) {
+    this.sourCandy = createSourCandyState();
+
+    // Marshmallow bounce pads: static solids. Landing on top launches the
+    // player; enemies and pickups just treat them as candy blocks.
+    const pads = this.physics.add.staticGroup();
+    this.pads = pads;
+    for (const pad of candy.marshmallows) {
+      const sprite = pads.create(pad.x, pad.y + CANDY.marshmallowH / 2, Assets.MARSHMALLOW, 0) as
+        Phaser.Physics.Arcade.Sprite;
+      sprite.setDepth(3.4);
+      lit(sprite);
+    }
+    this.physics.add.collider(this.player, pads, (_p, padObj) => {
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      if (!body.touching.down) return; // side bumps don't bounce
+      const pad = padObj as Phaser.Physics.Arcade.Sprite;
+      const fromSlam = this.player.bounceOnPad();
+      SynthAudio.boing();
+      pad.setFrame(1);
+      this.time.delayedCall(140, () => {
+        if (pad.active) pad.setFrame(0);
+      });
+      dustPuff(this, pad.x, pad.y - 10, fromSlam ? 10 : 5);
+      if (fromSlam) {
+        this.juice.shake(0.004, 120);
+        floatText(this, this.player.x, this.player.y - 40, 'SUPER BOING!', '#ffb0d8', 14);
+      }
+    });
+    this.physics.add.collider(this.zombies, pads);
+    this.physics.add.collider(this.extraEnemies, pads);
+    this.physics.add.collider(this.pickups, pads);
+
+    // Candy enemies are grounded, so they collide with the solids.
+    this.physics.add.collider(this.extraEnemies, this.solids);
+    for (const e of candy.enemies) this.spawnCandyEnemy(e.kind, e.x);
+
+    // A dead gummy bear splits into two cubs (Wes's idea).
+    this.events.on('gummy-split', ({ x, y }: { x: number; y: number }) => {
+      for (const dir of [-1, 1]) {
+        const cub = new GummyBear(this, x + dir * 12, y, true);
+        cub.setTarget(this.player);
+        cub.setVelocity(dir * 130, -260);
+        this.extraEnemies.add(cub);
+      }
+      floatText(this, x, y - 40, 'SPLIT!', '#ff8fb8', 14);
+    });
+
+    // The enraged Worm King summons gummy cubs; the cap counts live cubs only.
+    this.events.on(
+      'worm-summon',
+      ({ x, count, maxAlive }: { x: number; count: number; maxAlive: number }) => {
+        const alive = this.extraEnemies
+          .getChildren()
+          .filter((e) => e.active && e instanceof GummyBear && !e.isDead()).length;
+        const room = Math.max(0, maxAlive - alive);
+        for (let i = 0; i < Math.min(count, room); i++) {
+          const side = i % 2 === 0 ? -1 : 1;
+          let cx = Phaser.Math.Clamp(x + side * 100, this.def.arenaLeft + 60, this.def.worldWidth - 60);
+          if (Math.abs(cx - this.player.x) < 70) {
+            cx = Phaser.Math.Clamp(
+              cx + (cx >= this.player.x ? 80 : -80),
+              this.def.arenaLeft + 60,
+              this.def.worldWidth - 60
+            );
+          }
+          const cub = new GummyBear(this, cx, WORLD.groundY - 30, true);
+          cub.setTarget(this.player);
+          this.extraEnemies.add(cub);
+          dustPuff(this, cx, WORLD.groundY - 10, 8);
+        }
+      }
+    );
+
+    this.events.once('shutdown', () => this.registry.remove('candyHud'));
+  }
+
+  // Spawn with the body bottom 8px above the ground (same rule as zombies).
+  private spawnCandyEnemy(kind: CandyEnemyKind, x: number) {
+    const lift = WORLD.groundY - 8;
+    let enemy: GummyBear | Gumball | Chocolate;
+    if (kind === 'gummy') enemy = new GummyBear(this, x, lift - 20);
+    else if (kind === 'gumball') enemy = new Gumball(this, x, lift - 16);
+    else enemy = new Chocolate(this, x, lift - 30);
+    enemy.setTarget(this.player);
+    this.extraEnemies.add(enemy);
+  }
+
+  private onSourCandyCollected() {
+    if (!this.sourCandy) return;
+    this.sourCandy = collectSourCandy(this.sourCandy);
+    SynthAudio.heart();
+    floatText(this, this.player.x, this.player.y - 44, 'SOUR CANDY!', '#d8ff3a', 13);
+    // The first candy teaches the trick.
+    if (this.sourCandy.count === 1 && !this.registry.get('sourCandyHintShown')) {
+      this.registry.set('sourCandyHintShown', true);
+      floatText(this, this.player.x, this.player.y - 64, 'FEED IT TO THE WORM KING!', '#ffe24a', 12);
+    }
+  }
+
+  // Worm hook: spend one candy on an open-mouth hit.
+  private spendSourCandy(): boolean {
+    if (!this.sourCandy) return false;
+    const res = tryFeed(this.sourCandy, true);
+    this.sourCandy = res.state;
+    return res.fed;
+  }
+
+  // Worm hook: a sword hit knocks a candy loose, on a cooldown, with a small
+  // cap on candies lying around (so the arena never fills up).
+  private knockSourCandyLoose(x: number, y: number) {
+    if (!this.sourCandy || this.def.boss.kind !== 'worm') return;
+    const onField = this.pickups
+      .getChildren()
+      .filter((p) => p.active && (p as Pickup).kind === 'sourCandy').length;
+    if (onField >= 2) return;
+    const res = knockLoose(this.sourCandy, this.time.now, this.def.boss.candyKnockCooldownMs);
+    this.sourCandy = res.state;
+    if (res.drop) this.addPickup(new Pickup(this, x, y, 'sourCandy'));
+  }
+
+  // The 5-key portal (Level 5): the keys fly in, it swirls open, and walking
+  // into it ends the level.
+  private openPortal(portalX: number) {
+    if (this.portalOpen) return;
+    this.portalOpen = true;
+    const cam = this.cameras.main;
+    const portalY = WORLD.groundY - 64;
+
+    floatText(this, this.player.x, this.player.y - 90, 'THE PORTAL IS OPEN!', '#c88aff', 20);
+
+    // Every key the player holds flies from the HUD slots into the portal.
+    this.gameState.keys.forEach((has, i) => {
+      if (!has) return;
+      const key = this.add
+        .image(136 + i * 24, 62, Assets.KEY)
+        .setScrollFactor(0)
+        .setDepth(60)
+        .setScale(0.8);
+      this.tweens.add({
+        targets: key,
+        x: portalX - cam.scrollX,
+        y: portalY - cam.scrollY,
+        scale: 0.3,
+        delay: 150 * i,
+        duration: 700,
+        ease: 'Cubic.easeIn',
+        onComplete: () => key.destroy(),
+      });
+    });
+
+    this.time.delayedCall(1300, () => {
+      SynthAudio.portal();
+      this.juice.shake(0.005, 400);
+      const portal = this.physics.add.staticSprite(portalX, portalY, Assets.PORTAL, 0);
+      portal.setDepth(4).setScale(0);
+      portal.play(CandyAnims.PORTAL_SWIRL);
+      this.tweens.add({ targets: portal, scale: 1, duration: 600, ease: 'Back.easeOut' });
+      if (this.sys.renderer.type === Phaser.WEBGL) {
+        this.lights.addLight(portalX, portalY, 260, 0xc88aff, 1.4);
+      }
+      floatText(this, portalX, portalY - 90, 'WALK IN!', '#ffffff', 16);
+
+      let entered = false;
+      this.physics.add.overlap(this.player, portal, () => {
+        if (entered || this.player.isDying) return;
+        entered = true;
+        SynthAudio.victory();
+        this.tweens.add({ targets: this.player, alpha: 0, scale: 0.2, duration: 500 });
+        cam.fadeOut(800, 40, 0, 60);
+        this.time.delayedCall(900, () => {
+          this.scene.stop('HUD');
+          this.scene.start('Victory');
+        });
+      });
+    });
+  }
+
   private onKeyCollected() {
+    if (this.def.portal) {
+      // Level 5: the fifth key opens the portal instead of ending the level.
+      this.gameState.collectKey(this.def.keyIndex);
+      floatText(this, this.player.x, this.player.y - 60, `KEY #${this.def.keyIndex + 1}!`, '#ffd700', 20);
+      SynthAudio.stopMusic();
+      this.time.delayedCall(700, () => this.openPortal(this.def.portal!.x));
+      return;
+    }
     this.gameState.collectKey(this.def.keyIndex);
     floatText(
       this,
@@ -930,12 +1179,17 @@ export abstract class BaseLevelScene extends Phaser.Scene {
     // read anyway). Air is frozen through the intro banner + boss cinematic.
     if (this.def.water) this.tickWater(delta);
 
+    // Level 5: the HUD shows the sour candy pocket (hidden on other levels).
+    if (this.sourCandy) {
+      this.registry.set('candyHud', { count: this.sourCandy.count, cap: CANDY.sourCandyCap });
+    }
+
     for (const z of this.zombies.getChildren().slice()) {
       if (z.active) (z as Zombie).update(time, delta);
     }
 
-    for (const e of this.waterEnemies.getChildren().slice()) {
-      if (e.active) (e as WaterEnemy).update(time, delta);
+    for (const e of this.extraEnemies.getChildren().slice()) {
+      if (e.active) (e as ExtraEnemy).update(time, delta);
     }
 
     for (const p of this.pickups.getChildren()) {

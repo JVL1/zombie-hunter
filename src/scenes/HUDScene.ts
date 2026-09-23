@@ -50,6 +50,11 @@ export class HUDScene extends Phaser.Scene {
   private drownTween?: Phaser.Tweens.Tween;
   private drowning = false;
 
+  // Sour candy pocket (Level 5 only). Shown while 'candyHud' exists.
+  private candyPanel!: Phaser.GameObjects.Rectangle;
+  private candyIcons: Phaser.GameObjects.Image[] = [];
+  private lastCandyCount = -1;
+
   constructor() {
     super({ key: 'HUD' });
   }
@@ -175,6 +180,23 @@ export class HUDScene extends Phaser.Scene {
       .setDepth(1000)
       .setVisible(false);
 
+    // Sour candy pocket (Level 5, Wes): one icon slot per candy you can hold.
+    // Full icons for candies in hand, faded icons for empty slots.
+    this.candyIcons = [];
+    this.lastCandyCount = -1;
+    this.candyPanel = this.add
+      .rectangle(270, 14, 104, 40, 0x000000, 0.45)
+      .setOrigin(0)
+      .setVisible(false);
+    for (let i = 0; i < 3; i++) {
+      this.candyIcons.push(
+        this.add
+          .image(292 + i * 30, 34, Assets.SOUR_CANDY)
+          .setScale(1.3)
+          .setVisible(false)
+      );
+    }
+
     // Controls hint, fades away
     const hint = this.add.text(
       14,
@@ -255,6 +277,28 @@ export class HUDScene extends Phaser.Scene {
     }
 
     this.updateAirHud(time);
+    this.updateCandyHud();
+  }
+
+  // Sour candy slots. Renders nothing unless the level published 'candyHud'.
+  private updateCandyHud() {
+    const snap = this.registry.get('candyHud') as { count: number; cap: number } | undefined;
+    if (!snap) {
+      this.candyPanel.setVisible(false);
+      this.candyIcons.forEach((icon) => icon.setVisible(false));
+      this.lastCandyCount = -1;
+      return;
+    }
+    this.candyPanel.setVisible(true);
+    this.candyIcons.forEach((icon, i) => {
+      icon.setVisible(i < snap.cap);
+      icon.setAlpha(i < snap.count ? 1 : 0.22);
+    });
+    if (this.lastCandyCount >= 0 && snap.count > this.lastCandyCount) {
+      const icon = this.candyIcons[snap.count - 1];
+      if (icon) this.tweens.add({ targets: icon, scale: 1.8, duration: 110, yoyo: true });
+    }
+    this.lastCandyCount = snap.count;
   }
 
   // Air bar + scuba icon + drowning FX. Renders NOTHING and plays no
