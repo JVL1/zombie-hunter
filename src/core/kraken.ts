@@ -67,18 +67,22 @@ export function hitTentacle(
     return { ...state };
   }
 
-  const hp = Math.max(0, state.tentacles[index].hp - Math.max(0, damage));
+  const before = state.tentacles[index].hp;
+  const hp = Math.max(0, before - Math.max(0, damage));
   const tentacles = state.tentacles.map((tentacle, tentacleIndex) =>
     tentacleIndex === index ? { ...tentacle, hp } : tentacle
   );
 
-  if (hp > 0) {
-    return { ...state, tentacles };
+  // A guard chop also comes off the boss health (only the damage the tentacle
+  // had left, not overkill), so every good hit moves the boss bar.
+  const hurt = damageBoss({ ...state, tentacles }, before - hp, now);
+  if (isDead(hurt) || hp > 0) {
+    return hurt;
   }
 
   tentacles[index] = { alive: false, regrowAt: now + state.regrowMs, hp: 0 };
   return {
-    ...state,
+    ...hurt,
     phase: 'window',
     tentacles,
     activeGuard: null,
@@ -91,7 +95,12 @@ export function hitHead(state: KrakenState, damage: number, now: number): Kraken
   if (isDead(state) || state.phase !== 'window' || now >= state.windowEndsAt) {
     return { ...state };
   }
+  return damageBoss(state, damage, now);
+}
 
+// Boss health loss shared by head and tentacle hits: latches enrage at half
+// health (and pulls the next bubble forward) and ends the fight at zero.
+function damageBoss(state: KrakenState, damage: number, now: number): KrakenState {
   const hp = Math.max(0, state.hp - Math.max(0, damage));
   const enraged = state.enraged || hp <= state.maxHp * 0.5;
   const becameEnraged = enraged && !state.enraged;

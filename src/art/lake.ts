@@ -385,26 +385,40 @@ export function generateLakeTextures(scene: Phaser.Scene): void {
   g.clear();
 
   // --- Tentacle segment (28x28): suckered toxic-green arm chunk, tileable ---
-  g.fillStyle(0x3f8a2a, 1);
-  g.fillRoundedRect(2, 4, 24, 20, 8);
-  g.fillStyle(0x6cc244, 1); // top-lit ridge
-  g.fillRoundedRect(4, 5, 20, 6, 4);
-  g.fillStyle(0x1f4a1c, 1); // underside shadow
-  g.fillRoundedRect(4, 18, 20, 5, 4);
-  g.fillStyle(0xb8e07a, 1); // suckers
-  for (const [sx, sy] of [
-    [9, 12],
-    [16, 10],
-    [22, 14],
-    [13, 17],
-  ] as const) {
-    g.fillCircle(sx, sy, 2.4);
-    g.fillStyle(0x1c3d16, 1);
-    g.fillCircle(sx, sy, 1);
-    g.fillStyle(0xb8e07a, 1);
-  }
-  g.generateTexture(Assets.TENTACLE_SEGMENT, 28, 28);
-  g.clear();
+  // Two bakes: the normal arm, and a bright GLOW arm for the active guard, so
+  // kids can see which tentacle to chop (baked, because setTint is a no-op on
+  // Canvas).
+  const tentacle = (key: string, glow: boolean) => {
+    if (glow) {
+      g.fillStyle(0xeaff6a, 0.45); // outer glow rim
+      g.fillRoundedRect(0, 2, 28, 24, 10);
+      g.fillStyle(0xeaff6a, 0.9);
+      g.fillRoundedRect(1, 3, 26, 22, 9);
+    }
+    g.fillStyle(glow ? 0x7fd63a : 0x3f8a2a, 1);
+    g.fillRoundedRect(2, 4, 24, 20, 8);
+    g.fillStyle(glow ? 0xc8ff5a : 0x6cc244, 1); // top-lit ridge
+    g.fillRoundedRect(4, 5, 20, 6, 4);
+    g.fillStyle(glow ? 0x4c9a2a : 0x1f4a1c, 1); // underside shadow
+    g.fillRoundedRect(4, 18, 20, 5, 4);
+    const sucker = glow ? 0xfaffc8 : 0xb8e07a;
+    g.fillStyle(sucker, 1); // suckers
+    for (const [sx, sy] of [
+      [9, 12],
+      [16, 10],
+      [22, 14],
+      [13, 17],
+    ] as const) {
+      g.fillCircle(sx, sy, 2.4);
+      g.fillStyle(0x1c3d16, 1);
+      g.fillCircle(sx, sy, 1);
+      g.fillStyle(sucker, 1);
+    }
+    g.generateTexture(key, 28, 28);
+    g.clear();
+  };
+  tentacle(Assets.TENTACLE_SEGMENT, false);
+  tentacle(Assets.TENTACLE_GLOW, true);
 
   // --- Scuba HUD icon, 5 crack stages (16x16): diver mask, cracks grow 0..4 ---
   // Stage 0 pristine glass; each stage adds a spreading fracture, stage 4 nearly
