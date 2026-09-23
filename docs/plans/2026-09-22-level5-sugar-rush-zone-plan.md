@@ -129,6 +129,20 @@ Do the tasks in order. Each task ends with `npm test` and `npx tsc --noEmit`, an
 
 ---
 
-## Execution Progress
+## Execution Progress (updated 2026-09-22)
 
-Not started.
+**COMPLETE.** All tasks are done on the branch `feat/level5-sugar-rush-zone`. There are 193 vitest tests (29 new), and `tsc` and `npm run build` are clean.
+
+**Browser playtest (Canvas, headless):** the marshmallow bounce (feet reach about 300px above the pad), the slam bounce (about 400px), the gummy split (2 cubs survive the splitting swing), the gumball shake, roll, and candy drop, the chocolate melt (it reformed about 100px behind the player), the full Worm King loop (under → shake → pop → exposed → fed → dizzy → dig), the cub summon cap, key #5, the portal, and Victory. Level 4 still loads its fish, eels, air meter, and Kraken. There were no console errors.
+
+**WebGL pass (real Chrome, stepped by hand because the tab was hidden):** the lollipop lights and colors show. The first ambient color was too dark, so it is now `0x8a7898`.
+
+**Bugs that only the live playtest found (all fixed):**
+- The gumball measured its roll as `speed × delta`. Scene updates and physics steps do not run 1:1, so the roll stopped at about half distance. It now measures real movement.
+- The 600px arena was narrower than the 960px screen, so the camera showed empty space past the world end. The arena is now 960px, and a test enforces it.
+- The worm body looked like a pile. It is now a curve that rises from the mound and bends down to the head. The head never leans into a wall.
+
+**Tuning notes for Wes (feel, not bugs):**
+- A perfect bot beat the King with 2 feeds (300 HP). A child will need about 3 or 4. Raise the HP if it is too easy.
+- The gummy bear art is the first bear sprite. Change it with Wes at the screen.
+- The bounce height (`CANDY.bounceVelocity`) and the worm speeds are in `config.ts` and the level def.
