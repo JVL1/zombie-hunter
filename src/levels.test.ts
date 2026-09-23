@@ -396,6 +396,12 @@ describe('candy levels (Wes)', () => {
     }
   });
 
+  it('candy arenas are at least a screen wide (the locked camera never shows the void)', () => {
+    for (const def of candyLevels) {
+      expect(def.worldWidth - def.arenaLeft).toBeGreaterThanOrEqual(960);
+    }
+  });
+
   it('the portal stands inside the boss arena', () => {
     for (const def of LEVELS) {
       if (!def.portal) continue;

@@ -26,11 +26,13 @@ export class Gumball extends Phaser.Physics.Arcade.Sprite implements Hittable {
   private rollDir = 1;
   private rolled = 0;
   private patrolDir = 1;
+  private lastX: number;
   private readonly baseX: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, Assets.GUMBALL_SHEET, FRAME_A);
     this.baseX = x;
+    this.lastX = x;
     scene.add.existing(this);
     scene.physics.add.existing(this);
     lit(this);
@@ -76,7 +78,7 @@ export class Gumball extends Phaser.Physics.Arcade.Sprite implements Hittable {
     });
   }
 
-  update(time: number, delta: number) {
+  update(time: number) {
     if (this.dying || !this.body || !this.active) return;
     const body = this.body as Phaser.Physics.Arcade.Body;
 
@@ -113,7 +115,9 @@ export class Gumball extends Phaser.Physics.Arcade.Sprite implements Hittable {
         break;
       case 'roll': {
         body.setVelocityX(this.rollDir * CANDY.gumball.rollSpeed);
-        this.rolled += (CANDY.gumball.rollSpeed * delta) / 1000;
+        // Measure the distance really moved: scene updates and physics steps
+        // do not run 1:1, so speed × delta over-counts.
+        this.rolled += Math.abs(this.x - this.lastX);
         if ((this.rollDir < 0 && body.blocked.left) || (this.rollDir > 0 && body.blocked.right)) {
           // Bonk! Bounce off the wall and keep rolling the other way.
           this.rollDir = -this.rollDir;
@@ -137,9 +141,11 @@ export class Gumball extends Phaser.Physics.Arcade.Sprite implements Hittable {
         break;
     }
 
-    // Roll the ball: rotation follows the ground speed (except while shaking).
+    // Roll the ball: rotation follows the ground actually covered (not while
+    // shaking).
     if (this.mode !== 'shake') {
-      this.rotation += (body.velocity.x * delta) / 1000 / RADIUS;
+      this.rotation += (this.x - this.lastX) / RADIUS;
     }
+    this.lastX = this.x;
   }
 }

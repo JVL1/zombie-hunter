@@ -454,9 +454,11 @@ const levelFive: LevelDef = {
   victorySubtitle: 'The portal to the underworld is open',
   nextSceneKey: 'MainMenu',
   keyIndex: 4,
-  worldWidth: 3600,
+  worldWidth: 3960,
   playerSpawnX: 100,
-  ambientColor: 0x5a4a66, // dusky candy-pink night
+  // Candy-pink dusk, brighter than the other levels so the candy colors (and
+  // the enemies away from the lollipop lights) read on WebGL.
+  ambientColor: 0x8a7898,
   parallax: [
     { key: Assets.CANDY_NIGHT_FAR, factor: 0.12 },
     { key: Assets.CANDY_NIGHT_MID, factor: 0.3 },
@@ -534,8 +536,10 @@ const levelFive: LevelDef = {
     candyKnockCooldownMs: 1500,
     summon: { count: 2, maxAlive: 4, intervalMs: 7000 },
   },
-  portal: { x: 3480 },
-  bossSpawnX: 3380,
+  // The arena is a full screen wide (960px), so the locked camera never shows
+  // past the end of the world, and the King has room to dig around.
+  portal: { x: 3800 },
+  bossSpawnX: 3620,
   triggerX: 3100,
   arenaLeft: 3000,
 };

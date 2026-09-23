@@ -55,7 +55,7 @@ export class Level5Scene extends BaseLevelScene {
     const isWebGL = this.sys.renderer.type === Phaser.WEBGL;
 
     // Lollipop trees along the path — scenery only, no physics.
-    for (const x of [260, 980, 1560, 2140, 2700, 3060, 3560]) {
+    for (const x of [260, 980, 1560, 2140, 2700, 3060, 3560, 3920]) {
       lit(
         this.add
           .image(x, WORLD.groundY + 2, Assets.LOLLIPOP_TREE)

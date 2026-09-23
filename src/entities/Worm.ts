@@ -26,9 +26,9 @@ const FRAME_CHOMP = 2;
 const FRAME_DIZZY = 3;
 
 const SEGMENTS = 7;
-const HEAD_REACH = 70; // how far the exposed head leans out toward the player
+const HEAD_REACH = 150; // how far the exposed head leans out toward the player
 const CHOMP_LUNGE = 40; // extra lean during a chomp snap
-const ARCH_HEIGHT = 190; // how high the body arches above the ground
+const ARCH_HEIGHT = 130; // roughly how high the body arches above the ground
 const HEAD_BODY = 52; // square head hitbox, in frame px (scaled by def.scale)
 const STAR_COUNT = 3;
 
@@ -269,6 +269,9 @@ export class Worm extends Phaser.Physics.Arcade.Sprite implements BossEncounter 
 
   private onPop() {
     this.faceDir = this.target && this.target.x > this.wormState.x ? 1 : -1;
+    // Never lean the head into a wall — lean the other way instead.
+    const headX = this.wormState.x + this.faceDir * HEAD_REACH;
+    if (headX < this.minX - 40 || headX > this.maxX + 40) this.faceDir = -this.faceDir;
     SynthAudio.chomp();
     SynthAudio.groan(0.8);
     this.juice.shake(0.007, 250);
@@ -352,14 +355,21 @@ export class Worm extends Phaser.Physics.Arcade.Sprite implements BossEncounter 
     this.setVisible(visible);
     this.setRotation(s.phase === 'dizzy' ? Math.sin(now * 0.012) * 0.18 : 0);
 
-    // Segment arch from the mound (t=0) to just behind the head (t=1).
-    const peakY = WORLD.groundY - ARCH_HEIGHT * lift;
+    // The body is a quadratic curve like an upside-down "U": it rises out of
+    // the mound (t=0), arches over, and comes down to the back of the head
+    // (t=1). The control point sits high above the mound, so the body goes
+    // up first and then bends toward the player.
+    const p0x = baseX;
+    const p0y = WORLD.groundY + 10;
+    const p1x = baseX + this.faceDir * HEAD_REACH * 0.2;
+    const p1y = WORLD.groundY - 2 * ARCH_HEIGHT * lift;
+    const p2x = hx - this.faceDir * 18 * this.def.scale;
+    const p2y = hy - 16 * this.def.scale;
     for (let i = 0; i < this.segments.length; i++) {
       const t = (i + 1) / (this.segments.length + 1);
-      const sx = Phaser.Math.Linear(baseX, hx, t);
-      // A parabola through ground (t=0), the peak (t≈0.45), and the head (t=1).
-      const arc = 4 * t * (1 - t);
-      const sy = Phaser.Math.Linear(WORLD.groundY + 10, hy - 20, t) - arc * (WORLD.groundY - peakY) * 0.9;
+      const u = 1 - t;
+      const sx = u * u * p0x + 2 * u * t * p1x + t * t * p2x;
+      const sy = u * u * p0y + 2 * u * t * p1y + t * t * p2y;
       const seg = this.segments[i];
       seg.setPosition(sx + Math.sin(now * 0.005 + i) * 3 * lift, sy);
       seg.setScale(this.def.scale * (1.05 - t * 0.25));
